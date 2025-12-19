@@ -83,8 +83,8 @@ const JoinQueueScreen = ({ onNavigate, onSubmitRequest }) => {
     try {
       setLoading(true);
       setError('');
-      await onSubmitRequest(formData);
-      // Navigate to status check with the PO number
+      const result = await onSubmitRequest(formData);
+      // Navigate to status check with the PO number immediately
       onNavigate('status', formData.poNumber);
     } catch (error) {
       setError(error.message);
@@ -538,7 +538,8 @@ const DriverApp = () => {
   };
 
   const handleSubmitRequest = async (formData) => {
-    await driverQueueService.submitJoinRequest(formData);
+    const result = await driverQueueService.joinQueue(formData);
+    return result;
   };
 
   if (loading) {

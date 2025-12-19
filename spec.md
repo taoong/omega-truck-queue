@@ -43,7 +43,9 @@ Users can receive notifications for, and see a history of logs showing:
 - When they are at the top of the queue and should proceed to the staging area within the next X minutes
 - When they failed to arrive at the staging area within X minutes and have been moved to the back of the queue (unless the queue is empty)
 
-Admins can view all users attempting to join the queue and they can accept or reject (with a reason of either invalid info or their location being too far). Rejection would have to go through a verification popup in case it was clicked on by accident.
+Admins can view all users in the queue, users currently being processed (staged/loaded), and users that were processed that day.
+Admins can edit the queue by bumping trucks up or down the queue
+Admins can kick a truck off the queue with a reason of either invalid info or their location being too far. This action would have to go through a verification popup in case it was clicked on by accident.
 Admins can view the history of all tickets and interactions / notifications sent with timestamps
 Admins can edit the order of the queue (via drag+drop interactions) and kick users off the queue (with a popup dialog to confirm)
 

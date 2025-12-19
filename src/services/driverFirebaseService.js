@@ -31,20 +31,47 @@ export const QUEUE_STATUS = {
 
 // Driver Queue Services (No Authentication Required)
 export const driverQueueService = {
-  // Submit join queue request (anonymous)
-  async submitJoinRequest(requestData) {
+  // Join queue directly (anonymous)
+  async joinQueue(requestData) {
     try {
-      const docRef = await addDoc(collection(db, COLLECTIONS.PENDING_REQUESTS), {
+      // Get current queue to determine next position
+      const queueSnapshot = await getDocs(
+        query(
+          collection(db, COLLECTIONS.QUEUE),
+          where('status', 'in', [QUEUE_STATUS.QUEUED, QUEUE_STATUS.SUMMONED])
+        )
+      );
+      
+      // Calculate next position
+      const currentPositions = queueSnapshot.docs.map(doc => doc.data().position || 0);
+      const nextPosition = currentPositions.length > 0 ? Math.max(...currentPositions) + 1 : 1;
+      
+      // Add directly to queue
+      const docRef = await addDoc(collection(db, COLLECTIONS.QUEUE), {
         ...requestData,
-        status: QUEUE_STATUS.PENDING,
+        status: QUEUE_STATUS.QUEUED,
+        position: nextPosition,
+        joinedAt: serverTimestamp(),
         requestedAt: serverTimestamp(),
         userId: 'anonymous', // No user authentication required
         sessionId: this.generateSessionId() // Generate session ID for tracking
       });
       
-      return docRef.id;
+      // Log the activity
+      await addDoc(collection(db, COLLECTIONS.ACTIVITY_LOGS), {
+        type: 'queue_joined',
+        action: 'joined',
+        message: `${requestData.driverName} joined the queue`,
+        driverName: requestData.driverName,
+        poNumber: requestData.poNumber,
+        queueId: docRef.id,
+        position: nextPosition,
+        timestamp: serverTimestamp()
+      });
+      
+      return { id: docRef.id, position: nextPosition };
     } catch (error) {
-      throw new Error(`Failed to submit request: ${error.message}`);
+      throw new Error(`Failed to join queue: ${error.message}`);
     }
   },
 

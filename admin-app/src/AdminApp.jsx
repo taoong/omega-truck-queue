@@ -1,6 +1,5 @@
 import React, { useState, useEffect } from 'react';
 import { 
-  Bell, 
   Users, 
   History, 
   Settings, 
@@ -8,7 +7,6 @@ import {
   XCircle, 
   AlertCircle, 
   Clock,
-  X, 
   LogOut,
   Shield,
   Eye,
@@ -115,53 +113,6 @@ const StateTransitionModal = ({ selectedTicket, newStatus, onClose, onConfirm })
   );
 };
 
-// Reject Modal Component
-const RejectModal = ({ selectedTicket, rejectReason, setRejectReason, onClose, onConfirm }) => (
-  <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
-    <div className="bg-white rounded-xl p-6 max-w-md w-full">
-      <div className="flex items-center gap-3 mb-4">
-        <XCircle className="w-6 h-6 text-red-500" />
-        <h3 className="text-xl font-bold text-gray-800">Reject Request</h3>
-      </div>
-      
-      <div className="mb-4">
-        <p className="text-gray-600 mb-3">
-          Reject request from <strong>{selectedTicket?.driverName}</strong> ({selectedTicket?.poNumber})?
-        </p>
-        
-        <div>
-          <label className="block text-sm font-medium text-gray-700 mb-2">
-            Reason for rejection:
-          </label>
-          <textarea
-            value={rejectReason}
-            onChange={(e) => setRejectReason(e.target.value)}
-            className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-red-500 focus:border-transparent"
-            rows={3}
-            placeholder="Enter reason for rejection..."
-            required
-          />
-        </div>
-      </div>
-
-      <div className="flex gap-3">
-        <button
-          onClick={onClose}
-          className="flex-1 bg-gray-200 hover:bg-gray-300 text-gray-800 font-medium py-3 rounded-lg transition-colors"
-        >
-          Cancel
-        </button>
-        <button
-          onClick={() => onConfirm(selectedTicket.id, rejectReason)}
-          disabled={!rejectReason.trim()}
-          className="flex-1 bg-red-500 hover:bg-red-600 disabled:bg-red-300 text-white font-medium py-3 rounded-lg transition-colors"
-        >
-          Reject Request
-        </button>
-      </div>
-    </div>
-  </div>
-);
 
 // Login Form Component
 const AdminLoginForm = ({ onLogin, loading, error }) => {
@@ -264,12 +215,8 @@ const AdminLoginForm = ({ onLogin, loading, error }) => {
 const AdminDashboard = () => {
   const [view, setView] = useState('dashboard');
   const [queue, setQueue] = useState([]);
-  const [pendingRequests, setPendingRequests] = useState([]);
   const [activityLogs, setActivityLogs] = useState([]);
   const [loading, setLoading] = useState(true);
-  const [selectedTicket, setSelectedTicket] = useState(null);
-  const [showRejectModal, setShowRejectModal] = useState(false);
-  const [rejectReason, setRejectReason] = useState('');
   const [stateTransitionModal, setStateTransitionModal] = useState({ show: false, ticket: null, newStatus: null });
 
   useEffect(() => {
@@ -310,23 +257,6 @@ const AdminDashboard = () => {
       });
       unsubscribes.push(queueUnsub);
 
-      // Subscribe to pending requests
-      const pendingUnsub = adminQueueService.onPendingRequestsChange((snapshot) => {
-        try {
-          console.log('Pending requests data received:', snapshot.size, 'documents');
-          const pendingData = snapshot.docs.map(doc => ({
-            id: doc.id,
-            ...doc.data(),
-            requestedAt: doc.data().requestedAt?.toDate?.()?.toISOString() || new Date().toISOString()
-          }));
-          setPendingRequests(pendingData);
-        } catch (error) {
-          console.error('Error processing pending requests:', error);
-        }
-      }, (error) => {
-        console.error('Pending requests subscription error:', error);
-      });
-      unsubscribes.push(pendingUnsub);
 
       // Subscribe to activity logs
       const activityUnsub = adminQueueService.onActivityLogsChange((snapshot) => {
@@ -365,24 +295,6 @@ const AdminDashboard = () => {
     };
   }, []);
 
-  const handleApproveRequest = async (requestId) => {
-    try {
-      await adminQueueService.approveRequest(requestId);
-    } catch (error) {
-      alert(`Failed to approve request: ${error.message}`);
-    }
-  };
-
-  const handleRejectRequest = async (requestId, reason) => {
-    try {
-      await adminQueueService.rejectRequest(requestId, reason);
-      setShowRejectModal(false);
-      setSelectedTicket(null);
-      setRejectReason('');
-    } catch (error) {
-      alert(`Failed to reject request: ${error.message}`);
-    }
-  };
 
   const handleStatusUpdate = async (ticketId, newStatus) => {
     try {
@@ -417,20 +329,6 @@ const AdminDashboard = () => {
   return (
     <div className="min-h-screen bg-gray-100">
       {/* Modals */}
-      {showRejectModal && (
-        <RejectModal
-          selectedTicket={selectedTicket}
-          rejectReason={rejectReason}
-          setRejectReason={setRejectReason}
-          onClose={() => {
-            setShowRejectModal(false);
-            setSelectedTicket(null);
-            setRejectReason('');
-          }}
-          onConfirm={handleRejectRequest}
-        />
-      )}
-
       {stateTransitionModal.show && (
         <StateTransitionModal
           selectedTicket={stateTransitionModal.ticket}
@@ -490,7 +388,7 @@ const AdminDashboard = () => {
         {view === 'dashboard' && (
           <div className="space-y-6">
             {/* Stats Cards */}
-            <div className="grid grid-cols-1 md:grid-cols-4 gap-4 mb-8">
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-8">
               <div className="bg-white rounded-lg shadow p-6">
                 <div className="flex items-center">
                   <div className="p-2 bg-blue-100 rounded-lg">
@@ -531,64 +429,8 @@ const AdminDashboard = () => {
                   </div>
                 </div>
               </div>
-              
-              <div className="bg-white rounded-lg shadow p-6">
-                <div className="flex items-center">
-                  <div className="p-2 bg-purple-100 rounded-lg">
-                    <AlertCircle className="w-6 h-6 text-purple-600" />
-                  </div>
-                  <div className="ml-4">
-                    <p className="text-sm font-medium text-gray-600">Pending Requests</p>
-                    <p className="text-2xl font-bold text-gray-900">{pendingRequests.length}</p>
-                  </div>
-                </div>
-              </div>
             </div>
 
-            {/* Pending Requests */}
-            {pendingRequests.length > 0 && (
-              <div className="bg-yellow-50 border-2 border-yellow-300 rounded-xl p-6 shadow-lg">
-                <h2 className="text-xl font-bold text-gray-800 mb-4 flex items-center gap-2">
-                  <Bell className="w-5 h-5 text-yellow-600" />
-                  Pending Requests ({pendingRequests.length})
-                </h2>
-                
-                <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
-                  {pendingRequests.map((request) => (
-                    <div key={request.id} className="bg-white border border-yellow-200 rounded-lg p-4">
-                      <div className="mb-3">
-                        <div className="font-semibold text-gray-800 flex items-center gap-2">
-                          <Truck className="w-4 h-4" />
-                          {request.driverName}
-                        </div>
-                        <p className="text-sm text-gray-600">{request.poNumber}</p>
-                        <p className="text-xs text-gray-500">
-                          Code: {request.confirmCode} • {new Date(request.requestedAt).toLocaleTimeString()}
-                        </p>
-                      </div>
-                      
-                      <div className="flex gap-2">
-                        <button
-                          onClick={() => handleApproveRequest(request.id)}
-                          className="flex-1 bg-green-500 hover:bg-green-600 text-white text-sm font-medium py-2 rounded-lg transition-colors"
-                        >
-                          Approve
-                        </button>
-                        <button
-                          onClick={() => {
-                            setSelectedTicket(request);
-                            setShowRejectModal(true);
-                          }}
-                          className="flex-1 bg-red-500 hover:bg-red-600 text-white text-sm font-medium py-2 rounded-lg transition-colors"
-                        >
-                          Reject
-                        </button>
-                      </div>
-                    </div>
-                  ))}
-                </div>
-              </div>
-            )}
 
             {/* Three Stage Layout */}
             <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
