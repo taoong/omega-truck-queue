@@ -23,6 +23,10 @@ Staging: Currently in the 2-truck staging zone.
 Loading: In one of the 3 loading bays.
 Completed/Expired: Left the facility or kicked for inactivity.
 
+### Two separate apps
+Admins will use a web interface that requires them to login using their given admin accounts.
+Users will use a mobile interface where they are not required to log in.
+
 ### Features (for MVP)
 Users = truck drivers
 Admins = Omega operators

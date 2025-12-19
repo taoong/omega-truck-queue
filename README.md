@@ -4,12 +4,27 @@ A real-time truck queue management system built with React and Firebase for Omeg
 
 ## 🚛 Overview
 
-This application manages the influx of trucks to the Omega Products facility, addressing the upcoming street design changes that will eliminate outside parking for trucks. The system provides:
+This system consists of **two separate applications** as specified in the requirements:
 
-- **Driver Interface**: Join queue, check status, receive notifications
-- **Admin Interface**: Approve/reject requests, manage queue order, view activity logs
-- **Real-time Updates**: Live queue status and notifications
-- **Mobile Ready**: Capacitor integration for iOS and Android apps
+### 📱 **Driver Mobile App** (`/`)
+- **No login required** - Anonymous access for truck drivers
+- Mobile-optimized interface for smartphones
+- Join queue with PO number and confirmation code
+- Check status by PO number
+- Real-time notifications and updates
+- Capacitor-ready for iOS/Android deployment
+
+### 💻 **Admin Web Portal** (`/admin-app`)
+- **Login required** - Admin authentication
+- Desktop web interface for Omega operators
+- Approve/reject driver requests
+- Manage queue order with drag-and-drop
+- Real-time queue monitoring
+- Complete activity logs and audit trail
+
+## 🏗️ Architecture
+
+The system addresses the upcoming street design changes that will eliminate outside parking for trucks. It provides:
 
 ## 🏗️ Architecture
 
@@ -54,13 +69,23 @@ This application manages the influx of trucks to the Omega Products facility, ad
    - Update `src/config/firebase.js` with your Firebase project credentials
    - Set up Firestore security rules (see Firebase Setup section)
 
-4. **Start development server**
+4. **Start development servers**
+   
+   **Driver App (Mobile Interface):**
    ```bash
    npm run dev
+   # Opens at http://localhost:5173
+   ```
+   
+   **Admin App (Web Portal):**
+   ```bash
+   npm run dev:admin
+   # Opens at http://localhost:3001
    ```
 
-5. **Open in browser**
-   - Navigate to `http://localhost:5173`
+5. **Open in browsers**
+   - **Driver App**: `http://localhost:5173` (mobile-optimized)
+   - **Admin Portal**: `http://localhost:3001` (desktop web interface)
 
 ## 🔥 Firebase Setup
 
@@ -226,28 +251,51 @@ npx cap open android
 ## 🛠️ Development
 
 ### Available Scripts
-- `npm run dev` - Start development server
-- `npm run build` - Build for production
-- `npm run preview` - Preview production build
-- `npm run lint` - Run ESLint
+
+#### Driver App (Main)
+- `npm run dev` - Start driver app dev server (port 5173)
+- `npm run build` - Build driver app for production
+- `npm run preview` - Preview driver app production build
+
+#### Admin App
+- `npm run dev:admin` - Start admin app dev server (port 3001)
+- `npm run build:admin` - Build admin app for production
+- `npm run preview:admin` - Preview admin app production build
+
+#### Both Apps
+- `npm run build:all` - Build both apps for production
+- `npm run lint` - Run ESLint on both apps
 
 ### Project Structure
 ```
-src/
-├── components/          # Reusable UI components
-│   └── AuthForm.jsx    # Authentication form
-├── contexts/           # React contexts
-│   └── AppContext.jsx  # Main app state management
-├── services/           # Business logic and API calls
-│   ├── firebaseService.js    # Firebase operations
+├── src/                     # Driver Mobile App
+│   ├── services/
+│   │   └── driverFirebaseService.js  # Driver-specific Firebase operations
+│   ├── config/
+│   │   └── firebase.js              # Firebase configuration
+│   ├── DriverApp.jsx               # Main driver app component
+│   ├── App.jsx                     # App entry point
+│   ├── main.jsx                    # React entry point
+│   └── index.css                   # Global styles
+│
+├── admin-app/               # Admin Web Portal
+│   ├── src/
+│   │   ├── services/
+│   │   │   └── adminFirebaseService.js  # Admin-specific Firebase operations
+│   │   ├── config/
+│   │   │   └── firebase.js             # Firebase configuration
+│   │   ├── AdminApp.jsx               # Main admin app component
+│   │   ├── main.jsx                   # React entry point
+│   │   └── index.css                  # Global styles
+│   ├── package.json                   # Admin app dependencies
+│   ├── vite.config.js                # Admin app build config
+│   └── index.html                    # Admin app HTML template
+│
+├── services/                # Shared services (legacy)
 │   ├── locationService.js    # Location tracking
 │   ├── notificationService.js # Push notifications
 │   └── queueService.js       # Queue management
-├── config/             # Configuration files
-│   └── firebase.js     # Firebase configuration
-├── App.jsx            # Main app component
-├── main.jsx           # App entry point
-└── index.css          # Global styles
+└── README.md                # This file
 ```
 
 ## 🔒 Security

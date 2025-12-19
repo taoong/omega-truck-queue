@@ -1,28 +1,15 @@
 {
-  "name": "omega",
+  "name": "omega-admin",
   "private": true,
   "version": "0.0.0",
   "type": "module",
   "scripts": {
-    "dev": "vite --port 5173",
-    "dev:admin": "cd admin-app && npm run dev",
+    "dev": "vite --port 3001",
     "build": "vite build",
-    "build:admin": "cd admin-app && npm run build",
-    "build:all": "npm run build && npm run build:admin",
     "lint": "eslint .",
-    "preview": "vite preview",
-    "preview:admin": "cd admin-app && npm run preview"
+    "preview": "vite preview"
   },
   "dependencies": {
-    "@capacitor/android": "^8.0.0",
-    "@capacitor/app": "^8.0.0",
-    "@capacitor/cli": "^8.0.0",
-    "@capacitor/core": "^8.0.0",
-    "@capacitor/geolocation": "^8.0.0",
-    "@capacitor/haptics": "^8.0.0",
-    "@capacitor/ios": "^8.0.0",
-    "@capacitor/local-notifications": "^8.0.0",
-    "@capacitor/push-notifications": "^8.0.0",
     "firebase": "^12.7.0",
     "lucide-react": "^0.562.0",
     "react": "^19.2.0",
