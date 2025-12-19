@@ -15,6 +15,7 @@ import {
 } from 'firebase/firestore';
 import { 
   signInWithEmailAndPassword, 
+  createUserWithEmailAndPassword,
   signOut as firebaseSignOut,
   onAuthStateChanged
 } from 'firebase/auth';
@@ -46,14 +47,30 @@ export const adminAuthService = {
   // Sign in admin user
   async signIn(email, password) {
     try {
-      const userCredential = await signInWithEmailAndPassword(auth, email, password);
-      const user = userCredential.user;
+      let userCredential;
+      let user;
+      
+      try {
+        // Try to sign in first
+        userCredential = await signInWithEmailAndPassword(auth, email, password);
+        user = userCredential.user;
+      } catch (authError) {
+        // If sign in fails and this is a known admin email, try to create the account
+        if (authError.code === 'auth/invalid-credential' && this.isKnownAdminEmail(email)) {
+          console.log('Creating new admin account...');
+          userCredential = await createUserWithEmailAndPassword(auth, email, password);
+          user = userCredential.user;
+        } else {
+          throw authError;
+        }
+      }
       
       // Try to get user profile, create if doesn't exist
       let userProfile = await this.getUserProfile(user.uid);
       
       // If no profile exists and this is a known admin email, create the profile
       if (!userProfile && this.isKnownAdminEmail(email)) {
+        console.log('Creating admin profile...');
         userProfile = await this.createAdminProfile(user);
       }
       
@@ -64,6 +81,7 @@ export const adminAuthService = {
       
       return user;
     } catch (error) {
+      console.error('Sign in error:', error);
       throw new Error(`Sign in failed: ${error.message}`);
     }
   },
