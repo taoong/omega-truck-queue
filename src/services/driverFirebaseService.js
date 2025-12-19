@@ -79,16 +79,18 @@ export const driverQueueService = {
       const notificationsSnapshot = await getDocs(
         query(
           collection(db, COLLECTIONS.NOTIFICATIONS),
-          where('poNumber', '==', poNumber),
-          orderBy('timestamp', 'desc')
+          where('poNumber', '==', poNumber)
         )
       );
       
-      return notificationsSnapshot.docs.map(doc => ({
+      const notifications = notificationsSnapshot.docs.map(doc => ({
         id: doc.id,
         ...doc.data(),
         timestamp: doc.data().timestamp?.toDate?.()?.toISOString() || new Date().toISOString()
       }));
+      
+      // Sort by timestamp in JavaScript to avoid composite index requirement
+      return notifications.sort((a, b) => new Date(b.timestamp) - new Date(a.timestamp));
     } catch (error) {
       throw new Error(`Failed to get notifications: ${error.message}`);
     }
@@ -158,10 +160,20 @@ export const driverQueueService = {
   onNotificationsChangeByPO(poNumber, callback) {
     const q = query(
       collection(db, COLLECTIONS.NOTIFICATIONS),
-      where('poNumber', '==', poNumber),
-      orderBy('timestamp', 'desc')
+      where('poNumber', '==', poNumber)
     );
-    return onSnapshot(q, callback);
+    return onSnapshot(q, (snapshot) => {
+      // Sort the results in JavaScript to avoid composite index requirement
+      const sortedSnapshot = {
+        ...snapshot,
+        docs: [...snapshot.docs].sort((a, b) => {
+          const aTime = a.data().timestamp?.toDate?.() || new Date(0);
+          const bTime = b.data().timestamp?.toDate?.() || new Date(0);
+          return bTime - aTime; // Descending order (newest first)
+        })
+      };
+      callback(sortedSnapshot);
+    });
   },
 
   // Helper to calculate wait time

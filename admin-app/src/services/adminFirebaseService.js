@@ -274,8 +274,7 @@ export const adminQueueService = {
       const remainingQueue = await getDocs(
         query(
           collection(db, COLLECTIONS.QUEUE), 
-          where('position', '>', queueData.position),
-          orderBy('position')
+          where('position', '>', queueData.position)
         )
       );
 
@@ -389,10 +388,20 @@ export const adminQueueService = {
   onQueueChange(callback, errorCallback) {
     const q = query(
       collection(db, COLLECTIONS.QUEUE),
-      where('status', 'in', [QUEUE_STATUS.QUEUED, QUEUE_STATUS.SUMMONED, QUEUE_STATUS.STAGING, QUEUE_STATUS.LOADING]),
-      orderBy('position')
+      where('status', 'in', [QUEUE_STATUS.QUEUED, QUEUE_STATUS.SUMMONED, QUEUE_STATUS.STAGING, QUEUE_STATUS.LOADING])
     );
-    return onSnapshot(q, callback, errorCallback || ((error) => {
+    return onSnapshot(q, (snapshot) => {
+      // Sort by position in JavaScript to avoid composite index requirement
+      const sortedSnapshot = {
+        ...snapshot,
+        docs: [...snapshot.docs].sort((a, b) => {
+          const aPos = a.data().position || 0;
+          const bPos = b.data().position || 0;
+          return aPos - bPos; // Ascending order
+        })
+      };
+      callback(sortedSnapshot);
+    }, errorCallback || ((error) => {
       console.error('Queue subscription error:', error);
     }));
   },
