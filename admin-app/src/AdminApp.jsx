@@ -170,6 +170,99 @@ const RemoveModal = ({ selectedTicket, onClose, onConfirm }) => (
   </div>
 );
 
+// State Transition Modal Component
+const StateTransitionModal = ({ selectedTicket, newStatus, onClose, onConfirm }) => {
+  const statusLabels = {
+    [QUEUE_STATUS.QUEUED]: 'Queued',
+    [QUEUE_STATUS.SUMMONED]: 'Summoned',
+    [QUEUE_STATUS.STAGING]: 'In Staging',
+    [QUEUE_STATUS.LOADING]: 'Loading',
+    [QUEUE_STATUS.COMPLETED]: 'Completed'
+  };
+
+  const statusDescriptions = {
+    [QUEUE_STATUS.QUEUED]: 'Move back to waiting in queue',
+    [QUEUE_STATUS.SUMMONED]: 'Summon to proceed to facility',
+    [QUEUE_STATUS.STAGING]: 'Move to staging area (2-truck capacity)',
+    [QUEUE_STATUS.LOADING]: 'Move to loading bay (3-bay capacity)',
+    [QUEUE_STATUS.COMPLETED]: 'Mark as completed and remove from active queue'
+  };
+
+  const currentStatus = selectedTicket?.status;
+  const isMovingForward = Object.values(QUEUE_STATUS).indexOf(newStatus) > Object.values(QUEUE_STATUS).indexOf(currentStatus);
+  const isMovingBackward = Object.values(QUEUE_STATUS).indexOf(newStatus) < Object.values(QUEUE_STATUS).indexOf(currentStatus);
+
+  return (
+    <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
+      <div className="bg-white rounded-xl p-6 max-w-md w-full">
+        <div className="flex items-center gap-3 mb-4">
+          <AlertCircle className={`w-6 h-6 ${isMovingBackward ? 'text-orange-500' : 'text-blue-500'}`} />
+          <h3 className="text-xl font-bold text-gray-800">
+            {isMovingBackward ? 'Move Back?' : 'Advance Status?'}
+          </h3>
+        </div>
+        
+        <div className="mb-4">
+          <p className="text-gray-600 mb-3">
+            Change status for <strong>{selectedTicket?.driverName}</strong> ({selectedTicket?.poNumber})?
+          </p>
+          
+          <div className="bg-gray-50 rounded-lg p-3 mb-3">
+            <div className="flex items-center justify-between text-sm">
+              <span className="text-gray-600">Current:</span>
+              <span className="font-medium capitalize">{statusLabels[currentStatus]}</span>
+            </div>
+            <div className="flex items-center justify-center my-2">
+              <div className={`w-6 h-0.5 ${isMovingBackward ? 'bg-orange-400' : 'bg-blue-400'}`}></div>
+              <span className={`mx-2 ${isMovingBackward ? 'text-orange-500' : 'text-blue-500'}`}>
+                {isMovingBackward ? '←' : '→'}
+              </span>
+              <div className={`w-6 h-0.5 ${isMovingBackward ? 'bg-orange-400' : 'bg-blue-400'}`}></div>
+            </div>
+            <div className="flex items-center justify-between text-sm">
+              <span className="text-gray-600">New:</span>
+              <span className={`font-medium capitalize ${isMovingBackward ? 'text-orange-600' : 'text-blue-600'}`}>
+                {statusLabels[newStatus]}
+              </span>
+            </div>
+          </div>
+          
+          <p className="text-sm text-gray-600">
+            {statusDescriptions[newStatus]}
+          </p>
+          
+          {isMovingBackward && (
+            <div className="mt-3 p-3 bg-orange-50 border border-orange-200 rounded-lg">
+              <p className="text-sm text-orange-800">
+                <strong>Note:</strong> Moving backward will notify the driver of the status change.
+              </p>
+            </div>
+          )}
+        </div>
+
+        <div className="flex gap-3">
+          <button
+            onClick={onClose}
+            className="flex-1 bg-gray-200 hover:bg-gray-300 text-gray-800 font-medium py-3 rounded-lg transition-colors"
+          >
+            Cancel
+          </button>
+          <button
+            onClick={() => onConfirm(selectedTicket.id, newStatus)}
+            className={`flex-1 font-medium py-3 rounded-lg transition-colors text-white ${
+              isMovingBackward 
+                ? 'bg-orange-500 hover:bg-orange-600' 
+                : 'bg-blue-500 hover:bg-blue-600'
+            }`}
+          >
+            {isMovingBackward ? 'Move Back' : 'Advance'}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+};
+
 const RejectModal = ({ selectedTicket, rejectReason, setRejectReason, onClose, onConfirm }) => (
   <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
     <div className="bg-white rounded-xl p-6 max-w-md w-full">
@@ -243,6 +336,7 @@ const AdminDashboard = ({ user, onSignOut }) => {
   const [showRejectModal, setShowRejectModal] = useState(false);
   const [selectedTicket, setSelectedTicket] = useState(null);
   const [rejectReason, setRejectReason] = useState('');
+  const [stateTransitionModal, setStateTransitionModal] = useState({ show: false, ticket: null, newStatus: null });
   
   // Drag and drop state
   const [draggedItem, setDraggedItem] = useState(null);
@@ -368,6 +462,25 @@ const AdminDashboard = ({ user, onSignOut }) => {
     }
   };
 
+  const handleStatusUpdate = async (ticketId, newStatus) => {
+    try {
+      await adminQueueService.updateQueueStatus(ticketId, newStatus);
+      toast.success(`Status updated to ${newStatus}`);
+      setStateTransitionModal({ show: false, ticket: null, newStatus: null });
+    } catch (error) {
+      console.error('Error updating status:', error);
+      toast.error('Failed to update status');
+    }
+  };
+
+  const openStateTransitionModal = (ticket, newStatus) => {
+    setStateTransitionModal({ show: true, ticket, newStatus });
+  };
+
+  const closeStateTransitionModal = () => {
+    setStateTransitionModal({ show: false, ticket: null, newStatus: null });
+  };
+
   const handleRemoveFromQueue = async (queueId) => {
     try {
       await adminQueueService.removeFromQueue(queueId);
@@ -425,7 +538,7 @@ const AdminDashboard = ({ user, onSignOut }) => {
         />
       )}
       {showRejectModal && (
-        <RejectModal 
+        <RejectModal
           selectedTicket={selectedTicket}
           rejectReason={rejectReason}
           setRejectReason={setRejectReason}
@@ -435,6 +548,15 @@ const AdminDashboard = ({ user, onSignOut }) => {
             setRejectReason('');
           }}
           onConfirm={handleRejectRequest}
+        />
+      )}
+
+      {stateTransitionModal.show && (
+        <StateTransitionModal
+          selectedTicket={stateTransitionModal.ticket}
+          newStatus={stateTransitionModal.newStatus}
+          onClose={closeStateTransitionModal}
+          onConfirm={handleStatusUpdate}
         />
       )}
 
@@ -594,38 +716,74 @@ const AdminDashboard = ({ user, onSignOut }) => {
 
                       {/* Status update buttons */}
                       <div className="flex items-center gap-2">
-                        {ticket.status === QUEUE_STATUS.QUEUED && (
-                          <button
-                            onClick={() => adminQueueService.updateQueueStatus(ticket.id, QUEUE_STATUS.SUMMONED)}
-                            className="px-3 py-1 bg-blue-500 hover:bg-blue-600 text-white text-xs rounded transition-colors"
-                          >
-                            Summon
-                          </button>
-                        )}
-                        {ticket.status === QUEUE_STATUS.SUMMONED && (
-                          <button
-                            onClick={() => adminQueueService.updateQueueStatus(ticket.id, QUEUE_STATUS.STAGING)}
-                            className="px-3 py-1 bg-yellow-500 hover:bg-yellow-600 text-white text-xs rounded transition-colors"
-                          >
-                            To Staging
-                          </button>
-                        )}
-                        {ticket.status === QUEUE_STATUS.STAGING && (
-                          <button
-                            onClick={() => adminQueueService.updateQueueStatus(ticket.id, QUEUE_STATUS.LOADING)}
-                            className="px-3 py-1 bg-orange-500 hover:bg-orange-600 text-white text-xs rounded transition-colors"
-                          >
-                            To Loading
-                          </button>
-                        )}
-                        {ticket.status === QUEUE_STATUS.LOADING && (
-                          <button
-                            onClick={() => adminQueueService.updateQueueStatus(ticket.id, QUEUE_STATUS.COMPLETED)}
-                            className="px-3 py-1 bg-green-500 hover:bg-green-600 text-white text-xs rounded transition-colors"
-                          >
-                            Complete
-                          </button>
-                        )}
+                        <div className="flex flex-col gap-1">
+                          {/* Forward navigation - primary action */}
+                          <div className="flex justify-center">
+                            {ticket.status === QUEUE_STATUS.QUEUED && (
+                              <button
+                                onClick={() => openStateTransitionModal(ticket, QUEUE_STATUS.SUMMONED)}
+                                className="px-4 py-2 bg-blue-500 hover:bg-blue-600 text-white text-sm font-medium rounded-lg transition-colors shadow-sm"
+                              >
+                                Summon →
+                              </button>
+                            )}
+                            {ticket.status === QUEUE_STATUS.SUMMONED && (
+                              <button
+                                onClick={() => openStateTransitionModal(ticket, QUEUE_STATUS.STAGING)}
+                                className="px-4 py-2 bg-yellow-500 hover:bg-yellow-600 text-white text-sm font-medium rounded-lg transition-colors shadow-sm"
+                              >
+                                To Staging →
+                              </button>
+                            )}
+                            {ticket.status === QUEUE_STATUS.STAGING && (
+                              <button
+                                onClick={() => openStateTransitionModal(ticket, QUEUE_STATUS.LOADING)}
+                                className="px-4 py-2 bg-orange-500 hover:bg-orange-600 text-white text-sm font-medium rounded-lg transition-colors shadow-sm"
+                              >
+                                To Loading →
+                              </button>
+                            )}
+                            {ticket.status === QUEUE_STATUS.LOADING && (
+                              <button
+                                onClick={() => openStateTransitionModal(ticket, QUEUE_STATUS.COMPLETED)}
+                                className="px-4 py-2 bg-green-500 hover:bg-green-600 text-white text-sm font-medium rounded-lg transition-colors shadow-sm"
+                              >
+                                Complete →
+                              </button>
+                            )}
+                          </div>
+                          
+                          {/* Backward navigation - secondary actions */}
+                          {(ticket.status !== QUEUE_STATUS.QUEUED) && (
+                            <div className="flex flex-wrap justify-center gap-1">
+                              <button
+                                onClick={() => openStateTransitionModal(ticket, QUEUE_STATUS.QUEUED)}
+                                className="px-2 py-1 bg-gray-400 hover:bg-gray-500 text-white text-xs rounded transition-colors"
+                                title="Move back to queue"
+                              >
+                                ← Queue
+                              </button>
+                              {ticket.status !== QUEUE_STATUS.SUMMONED && (
+                                <button
+                                  onClick={() => openStateTransitionModal(ticket, QUEUE_STATUS.SUMMONED)}
+                                  className="px-2 py-1 bg-gray-400 hover:bg-gray-500 text-white text-xs rounded transition-colors"
+                                  title="Move back to summoned"
+                                >
+                                  ← Summoned
+                                </button>
+                              )}
+                              {(ticket.status === QUEUE_STATUS.LOADING) && (
+                                <button
+                                  onClick={() => openStateTransitionModal(ticket, QUEUE_STATUS.STAGING)}
+                                  className="px-2 py-1 bg-gray-400 hover:bg-gray-500 text-white text-xs rounded transition-colors"
+                                  title="Move back to staging"
+                                >
+                                  ← Staging
+                                </button>
+                              )}
+                            </div>
+                          )}
+                        </div>
                         
                         <button
                           onClick={() => {
