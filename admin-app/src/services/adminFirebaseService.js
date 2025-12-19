@@ -376,29 +376,35 @@ export const adminQueueService = {
   },
 
   // Real-time listeners
-  onPendingRequestsChange(callback) {
+  onPendingRequestsChange(callback, errorCallback) {
     const q = query(
       collection(db, COLLECTIONS.PENDING_REQUESTS),
       orderBy('requestedAt', 'desc')
     );
-    return onSnapshot(q, callback);
+    return onSnapshot(q, callback, errorCallback || ((error) => {
+      console.error('Pending requests subscription error:', error);
+    }));
   },
 
-  onQueueChange(callback) {
+  onQueueChange(callback, errorCallback) {
     const q = query(
       collection(db, COLLECTIONS.QUEUE),
       where('status', 'in', [QUEUE_STATUS.QUEUED, QUEUE_STATUS.SUMMONED, QUEUE_STATUS.STAGING, QUEUE_STATUS.LOADING]),
       orderBy('position')
     );
-    return onSnapshot(q, callback);
+    return onSnapshot(q, callback, errorCallback || ((error) => {
+      console.error('Queue subscription error:', error);
+    }));
   },
 
-  onActivityLogsChange(callback) {
+  onActivityLogsChange(callback, errorCallback) {
     const q = query(
       collection(db, COLLECTIONS.ACTIVITY_LOGS),
       orderBy('timestamp', 'desc')
     );
-    return onSnapshot(q, callback);
+    return onSnapshot(q, callback, errorCallback || ((error) => {
+      console.error('Activity logs subscription error:', error);
+    }));
   }
 };
 

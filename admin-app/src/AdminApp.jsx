@@ -250,44 +250,95 @@ const AdminDashboard = ({ user, onSignOut }) => {
   // Real-time data subscriptions
   useEffect(() => {
     const unsubscribes = [];
+    let loadingTimeout;
 
-    // Subscribe to queue changes
-    const queueUnsub = adminQueueService.onQueueChange((snapshot) => {
-      const queueData = snapshot.docs.map(doc => ({
-        id: doc.id,
-        ...doc.data(),
-        joinedAt: doc.data().joinedAt?.toDate?.()?.toISOString() || new Date().toISOString(),
-        requestedAt: doc.data().requestedAt?.toDate?.()?.toISOString() || new Date().toISOString()
-      }));
-      setQueue(queueData);
+    // Set a timeout to ensure loading doesn't stay true forever
+    loadingTimeout = setTimeout(() => {
+      console.log('Loading timeout reached, setting loading to false');
       setLoading(false);
-    });
-    unsubscribes.push(queueUnsub);
+    }, 5000); // 5 second timeout
 
-    // Subscribe to pending requests
-    const pendingUnsub = adminQueueService.onPendingRequestsChange((snapshot) => {
-      const pendingData = snapshot.docs.map(doc => ({
-        id: doc.id,
-        ...doc.data(),
-        requestedAt: doc.data().requestedAt?.toDate?.()?.toISOString() || new Date().toISOString()
-      }));
-      setPendingRequests(pendingData);
-    });
-    unsubscribes.push(pendingUnsub);
+    try {
+      // Subscribe to queue changes
+      const queueUnsub = adminQueueService.onQueueChange((snapshot) => {
+        try {
+          console.log('Queue data received:', snapshot.size, 'documents');
+          const queueData = snapshot.docs.map(doc => ({
+            id: doc.id,
+            ...doc.data(),
+            joinedAt: doc.data().joinedAt?.toDate?.()?.toISOString() || new Date().toISOString(),
+            requestedAt: doc.data().requestedAt?.toDate?.()?.toISOString() || new Date().toISOString()
+          }));
+          setQueue(queueData);
+          
+          // Clear timeout and set loading to false on first successful load
+          if (loadingTimeout) {
+            clearTimeout(loadingTimeout);
+            loadingTimeout = null;
+          }
+          setLoading(false);
+        } catch (error) {
+          console.error('Error processing queue data:', error);
+          setLoading(false);
+        }
+      }, (error) => {
+        console.error('Queue subscription error:', error);
+        setLoading(false);
+      });
+      unsubscribes.push(queueUnsub);
 
-    // Subscribe to activity logs
-    const logsUnsub = adminQueueService.onActivityLogsChange((snapshot) => {
-      const logsData = snapshot.docs.map(doc => ({
-        id: doc.id,
-        ...doc.data(),
-        timestamp: doc.data().timestamp?.toDate?.()?.toISOString() || new Date().toISOString()
-      }));
-      setActivityLogs(logsData);
-    });
-    unsubscribes.push(logsUnsub);
+      // Subscribe to pending requests
+      const pendingUnsub = adminQueueService.onPendingRequestsChange((snapshot) => {
+        try {
+          console.log('Pending requests data received:', snapshot.size, 'documents');
+          const pendingData = snapshot.docs.map(doc => ({
+            id: doc.id,
+            ...doc.data(),
+            requestedAt: doc.data().requestedAt?.toDate?.()?.toISOString() || new Date().toISOString()
+          }));
+          setPendingRequests(pendingData);
+        } catch (error) {
+          console.error('Error processing pending requests:', error);
+        }
+      }, (error) => {
+        console.error('Pending requests subscription error:', error);
+      });
+      unsubscribes.push(pendingUnsub);
+
+      // Subscribe to activity logs
+      const logsUnsub = adminQueueService.onActivityLogsChange((snapshot) => {
+        try {
+          console.log('Activity logs data received:', snapshot.size, 'documents');
+          const logsData = snapshot.docs.map(doc => ({
+            id: doc.id,
+            ...doc.data(),
+            timestamp: doc.data().timestamp?.toDate?.()?.toISOString() || new Date().toISOString()
+          }));
+          setActivityLogs(logsData);
+        } catch (error) {
+          console.error('Error processing activity logs:', error);
+        }
+      }, (error) => {
+        console.error('Activity logs subscription error:', error);
+      });
+      unsubscribes.push(logsUnsub);
+
+    } catch (error) {
+      console.error('Error setting up subscriptions:', error);
+      setLoading(false);
+    }
 
     return () => {
-      unsubscribes.forEach(unsub => unsub());
+      if (loadingTimeout) {
+        clearTimeout(loadingTimeout);
+      }
+      unsubscribes.forEach(unsub => {
+        try {
+          unsub();
+        } catch (error) {
+          console.error('Error unsubscribing:', error);
+        }
+      });
     };
   }, []);
 
