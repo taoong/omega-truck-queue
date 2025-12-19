@@ -49,8 +49,14 @@ export const adminAuthService = {
       const userCredential = await signInWithEmailAndPassword(auth, email, password);
       const user = userCredential.user;
       
-      // Verify user is admin
-      const userProfile = await this.getUserProfile(user.uid);
+      // Try to get user profile, create if doesn't exist
+      let userProfile = await this.getUserProfile(user.uid);
+      
+      // If no profile exists and this is a known admin email, create the profile
+      if (!userProfile && this.isKnownAdminEmail(email)) {
+        userProfile = await this.createAdminProfile(user);
+      }
+      
       if (!userProfile || userProfile.role !== 'admin') {
         await firebaseSignOut(auth);
         throw new Error('Access denied. Admin account required.');
@@ -59,6 +65,35 @@ export const adminAuthService = {
       return user;
     } catch (error) {
       throw new Error(`Sign in failed: ${error.message}`);
+    }
+  },
+
+  // Check if email is a known admin email
+  isKnownAdminEmail(email) {
+    const adminEmails = [
+      'admin@omega.com',
+      'admin@omegaproducts.com'
+    ];
+    return adminEmails.includes(email.toLowerCase());
+  },
+
+  // Create admin profile
+  async createAdminProfile(user) {
+    try {
+      const adminProfile = {
+        uid: user.uid,
+        email: user.email,
+        role: 'admin',
+        driverName: '',
+        createdAt: serverTimestamp(),
+        isActive: true
+      };
+      
+      const docRef = await addDoc(collection(db, COLLECTIONS.USERS), adminProfile);
+      return { id: docRef.id, ...adminProfile };
+    } catch (error) {
+      console.error('Failed to create admin profile:', error);
+      throw new Error('Failed to create admin profile');
     }
   },
 
@@ -95,6 +130,11 @@ export const adminAuthService = {
       }
       return null;
     } catch (error) {
+      // If permission denied, return null instead of throwing
+      if (error.code === 'permission-denied') {
+        console.warn('Permission denied accessing user profile, user may not exist yet');
+        return null;
+      }
       throw new Error(`Failed to get user profile: ${error.message}`);
     }
   }

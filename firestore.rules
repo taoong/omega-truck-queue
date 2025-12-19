@@ -1,0 +1,43 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    // Allow read/write access to all authenticated users for now
+    // This is a permissive rule for development - tighten for production
+    match /{document=**} {
+      allow read, write: if true;
+    }
+    
+    // More secure rules (comment out the above and use these for production):
+    /*
+    // Users can read/write their own user document
+    match /users/{userId} {
+      allow read, write: if request.auth != null;
+    }
+    
+    // Queue items - anyone can read, authenticated users can write
+    match /queue/{queueId} {
+      allow read: if true;
+      allow write: if request.auth != null;
+    }
+    
+    // Pending requests - anyone can create, authenticated users can read/write
+    match /pendingRequests/{requestId} {
+      allow read: if true;
+      allow create: if true;
+      allow update, delete: if request.auth != null;
+    }
+    
+    // Notifications - anyone can read, authenticated users can write
+    match /notifications/{notificationId} {
+      allow read: if true;
+      allow write: if request.auth != null;
+    }
+    
+    // Activity logs - anyone can read, authenticated users can write
+    match /activityLogs/{logId} {
+      allow read: if true;
+      allow write: if request.auth != null;
+    }
+    */
+  }
+}
