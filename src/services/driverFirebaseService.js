@@ -61,8 +61,7 @@ export const driverQueueService = {
       await addDoc(collection(db, COLLECTIONS.ACTIVITY_LOGS), {
         type: 'queue_joined',
         action: 'joined',
-        message: `${requestData.driverName} joined the queue`,
-        driverName: requestData.driverName,
+        message: `Truck with PO ${requestData.poNumber} joined the queue`,
         poNumber: requestData.poNumber,
         queueId: docRef.id,
         position: nextPosition,

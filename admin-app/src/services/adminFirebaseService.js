@@ -42,6 +42,12 @@ export const QUEUE_STATUS = {
   EXPIRED: 'expired'
 };
 
+// Admin role constants
+export const ADMIN_ROLES = {
+  SHIPPING_ADMIN: 'shipping_admin',
+  ORDER_DESK_ADMIN: 'order_desk_admin'
+};
+
 // Authentication Services (Admin only)
 export const adminAuthService = {
   // Sign in admin user
@@ -74,7 +80,7 @@ export const adminAuthService = {
         userProfile = await this.createAdminProfile(user);
       }
       
-      if (!userProfile || userProfile.role !== 'admin') {
+      if (!userProfile || !Object.values(ADMIN_ROLES).includes(userProfile.role)) {
         await firebaseSignOut(auth);
         throw new Error('Access denied. Admin account required.');
       }
@@ -86,22 +92,36 @@ export const adminAuthService = {
     }
   },
 
+  // Check if email is a known admin email and return role
+  getAdminRole(email) {
+    const adminConfig = {
+      'admin@omega.com': ADMIN_ROLES.SHIPPING_ADMIN,
+      'shipping@omega.com': ADMIN_ROLES.SHIPPING_ADMIN,
+      'shipping@omegaproducts.com': ADMIN_ROLES.SHIPPING_ADMIN,
+      'orders@omega.com': ADMIN_ROLES.ORDER_DESK_ADMIN,
+      'orders@omegaproducts.com': ADMIN_ROLES.ORDER_DESK_ADMIN,
+      'orderdesk@omega.com': ADMIN_ROLES.ORDER_DESK_ADMIN
+    };
+    return adminConfig[email.toLowerCase()] || null;
+  },
+
   // Check if email is a known admin email
   isKnownAdminEmail(email) {
-    const adminEmails = [
-      'admin@omega.com',
-      'admin@omegaproducts.com'
-    ];
-    return adminEmails.includes(email.toLowerCase());
+    return this.getAdminRole(email) !== null;
   },
 
   // Create admin profile
   async createAdminProfile(user) {
     try {
+      const role = this.getAdminRole(user.email);
+      if (!role) {
+        throw new Error('Unknown admin email');
+      }
+
       const adminProfile = {
         uid: user.uid,
         email: user.email,
-        role: 'admin',
+        role: role,
         driverName: '',
         createdAt: serverTimestamp(),
         isActive: true
@@ -414,6 +434,77 @@ export const adminQueueService = {
     return onSnapshot(q, callback, errorCallback || ((error) => {
       console.error('Activity logs subscription error:', error);
     }));
+  },
+
+  // PO Validation Functions (Order Desk Admin only)
+  async validatePO(queueId, isValid, reason = '') {
+    try {
+      const queueRef = doc(db, COLLECTIONS.QUEUE, queueId);
+      await updateDoc(queueRef, {
+        poValidated: isValid,
+        poValidationReason: reason,
+        poValidatedAt: serverTimestamp()
+      });
+
+      // Log the activity
+      await addDoc(collection(db, COLLECTIONS.ACTIVITY_LOGS), {
+        type: 'admin_action',
+        action: isValid ? 'po_validated' : 'po_invalidated',
+        message: `PO ${isValid ? 'validated' : 'invalidated'} by order desk admin${reason ? ': ' + reason : ''}`,
+        queueId: queueId,
+        timestamp: serverTimestamp()
+      });
+
+      // TODO: Send notification to driver
+      
+    } catch (error) {
+      throw new Error(`Failed to ${isValid ? 'validate' : 'invalidate'} PO: ${error.message}`);
+    }
+  },
+
+  // Create manual ticket (Order Desk Admin only)
+  async createManualTicket(ticketData) {
+    try {
+      // Get current queue to determine next position
+      const queueSnapshot = await getDocs(
+        query(
+          collection(db, COLLECTIONS.QUEUE),
+          where('status', 'in', [QUEUE_STATUS.QUEUED, QUEUE_STATUS.SUMMONED])
+        )
+      );
+      
+      // Calculate next position
+      const currentPositions = queueSnapshot.docs.map(doc => doc.data().position || 0);
+      const nextPosition = currentPositions.length > 0 ? Math.max(...currentPositions) + 1 : 1;
+      
+      // Add to queue
+      const docRef = await addDoc(collection(db, COLLECTIONS.QUEUE), {
+        ...ticketData,
+        status: QUEUE_STATUS.QUEUED,
+        position: nextPosition,
+        joinedAt: serverTimestamp(),
+        requestedAt: serverTimestamp(),
+        userId: 'manual_admin_entry',
+        sessionId: 'admin_' + Date.now(),
+        poValidated: true, // Manually created tickets are pre-validated
+        createdByAdmin: true
+      });
+      
+      // Log the activity
+      await addDoc(collection(db, COLLECTIONS.ACTIVITY_LOGS), {
+        type: 'admin_action',
+        action: 'manual_ticket_created',
+        message: `Manual ticket created by order desk admin for PO ${ticketData.poNumber}`,
+        poNumber: ticketData.poNumber,
+        queueId: docRef.id,
+        position: nextPosition,
+        timestamp: serverTimestamp()
+      });
+      
+      return { id: docRef.id, position: nextPosition };
+    } catch (error) {
+      throw new Error(`Failed to create manual ticket: ${error.message}`);
+    }
   }
 };
 

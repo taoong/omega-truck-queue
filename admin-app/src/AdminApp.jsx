@@ -13,7 +13,7 @@ import {
   EyeOff,
   Truck
 } from 'lucide-react';
-import { adminAuthService, adminQueueService, QUEUE_STATUS } from './services/adminFirebaseService.js';
+import { adminAuthService, adminQueueService, QUEUE_STATUS, ADMIN_ROLES } from './services/adminFirebaseService.js';
 
 // Loading component
 const LoadingSpinner = () => (
@@ -24,6 +24,161 @@ const LoadingSpinner = () => (
     </div>
   </div>
 );
+
+// PO Validation Modal Component
+const POValidationModal = ({ selectedTicket, onClose, onConfirm }) => {
+  const [reason, setReason] = useState('');
+
+  return (
+    <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
+      <div className="bg-white rounded-xl p-6 max-w-md w-full">
+        <div className="flex items-center gap-3 mb-4">
+          <CheckCircle className="w-6 h-6 text-blue-500" />
+          <h3 className="text-xl font-bold text-gray-800">PO Validation</h3>
+        </div>
+        
+        <div className="mb-4">
+          <p className="text-gray-600 mb-3">
+            Validate PO <strong>{selectedTicket?.poNumber}</strong>?
+          </p>
+          
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-2">
+              Reason (optional):
+            </label>
+            <textarea
+              value={reason}
+              onChange={(e) => setReason(e.target.value)}
+              className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+              rows={3}
+              placeholder="Enter validation notes..."
+            />
+          </div>
+        </div>
+
+        <div className="flex gap-3">
+          <button
+            onClick={onClose}
+            className="flex-1 bg-gray-200 hover:bg-gray-300 text-gray-800 font-medium py-3 rounded-lg transition-colors"
+          >
+            Cancel
+          </button>
+          <button
+            onClick={() => onConfirm(selectedTicket.id, false, reason)}
+            className="flex-1 bg-red-500 hover:bg-red-600 text-white font-medium py-3 rounded-lg transition-colors"
+          >
+            Invalidate
+          </button>
+          <button
+            onClick={() => onConfirm(selectedTicket.id, true, reason)}
+            className="flex-1 bg-green-500 hover:bg-green-600 text-white font-medium py-3 rounded-lg transition-colors"
+          >
+            Validate
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+};
+
+// Manual Ticket Creation Modal
+const ManualTicketModal = ({ onClose, onConfirm }) => {
+  const [formData, setFormData] = useState({
+    poNumber: '',
+    phoneNumber: '',
+    orderType: 'pickup'
+  });
+  const [loading, setLoading] = useState(false);
+
+  const handleSubmit = async (e) => {
+    e.preventDefault();
+    if (!formData.poNumber || !formData.phoneNumber) {
+      return;
+    }
+
+    setLoading(true);
+    try {
+      await onConfirm(formData);
+      onClose();
+    } catch (error) {
+      console.error('Error creating manual ticket:', error);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  return (
+    <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
+      <div className="bg-white rounded-xl p-6 max-w-md w-full">
+        <div className="flex items-center gap-3 mb-4">
+          <Truck className="w-6 h-6 text-blue-500" />
+          <h3 className="text-xl font-bold text-gray-800">Create Manual Ticket</h3>
+        </div>
+        
+        <form onSubmit={handleSubmit} className="space-y-4">
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-2">
+              PO Number
+            </label>
+            <input
+              type="text"
+              value={formData.poNumber}
+              onChange={(e) => setFormData(prev => ({ ...prev, poNumber: e.target.value }))}
+              className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+              placeholder="PO123456"
+              required
+            />
+          </div>
+
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-2">
+              Phone Number
+            </label>
+            <input
+              type="tel"
+              value={formData.phoneNumber}
+              onChange={(e) => setFormData(prev => ({ ...prev, phoneNumber: e.target.value }))}
+              className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+              placeholder="(555) 123-4567"
+              required
+            />
+          </div>
+
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-2">
+              Order Type
+            </label>
+            <select
+              value={formData.orderType}
+              onChange={(e) => setFormData(prev => ({ ...prev, orderType: e.target.value }))}
+              className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+            >
+              <option value="pickup">Pickup</option>
+              <option value="delivery">Delivery</option>
+            </select>
+          </div>
+
+          <div className="flex gap-3 pt-4">
+            <button
+              type="button"
+              onClick={onClose}
+              className="flex-1 bg-gray-200 hover:bg-gray-300 text-gray-800 font-medium py-3 rounded-lg transition-colors"
+            >
+              Cancel
+            </button>
+            <button
+              type="submit"
+              disabled={loading}
+              className="flex-1 bg-blue-500 hover:bg-blue-600 disabled:bg-blue-300 text-white font-medium py-3 rounded-lg transition-colors"
+            >
+              {loading ? 'Creating...' : 'Create Ticket'}
+            </button>
+          </div>
+        </form>
+      </div>
+    </div>
+  );
+};
 
 // State Transition Modal Component
 const StateTransitionModal = ({ selectedTicket, newStatus, onClose, onConfirm }) => {
@@ -54,7 +209,7 @@ const StateTransitionModal = ({ selectedTicket, newStatus, onClose, onConfirm })
         
         <div className="mb-4">
           <p className="text-gray-600 mb-3">
-            Change status for <strong>{selectedTicket?.driverName}</strong> ({selectedTicket?.poNumber})?
+            Change status for PO <strong>{selectedTicket?.poNumber}</strong>?
           </p>
           
           <div className="bg-gray-50 rounded-lg p-3 mb-3">
@@ -124,8 +279,12 @@ const AdminLoginForm = ({ onLogin, loading, error }) => {
     onLogin(formData.email, formData.password);
   };
 
-  const useDemoCredentials = () => {
-    setFormData({ email: 'admin@omega.com', password: 'admin123' });
+  const useShippingAdminDemo = () => {
+    setFormData({ email: 'shipping@omega.com', password: 'shipping123' });
+  };
+
+  const useOrderDeskAdminDemo = () => {
+    setFormData({ email: 'orders@omega.com', password: 'orders123' });
   };
 
   return (
@@ -198,13 +357,22 @@ const AdminLoginForm = ({ onLogin, loading, error }) => {
             )}
           </button>
 
-          <button
-            type="button"
-            onClick={useDemoCredentials}
-            className="w-full bg-gray-100 hover:bg-gray-200 text-gray-700 font-medium py-3 rounded-lg transition-colors"
-          >
-            Use Demo Credentials
-          </button>
+          <div className="grid grid-cols-2 gap-3">
+            <button
+              type="button"
+              onClick={useShippingAdminDemo}
+              className="bg-blue-100 hover:bg-blue-200 text-blue-700 font-medium py-3 rounded-lg transition-colors text-sm"
+            >
+              Shipping Admin Demo
+            </button>
+            <button
+              type="button"
+              onClick={useOrderDeskAdminDemo}
+              className="bg-purple-100 hover:bg-purple-200 text-purple-700 font-medium py-3 rounded-lg transition-colors text-sm"
+            >
+              Order Desk Demo
+            </button>
+          </div>
         </form>
       </div>
     </div>
@@ -212,12 +380,14 @@ const AdminLoginForm = ({ onLogin, loading, error }) => {
 };
 
 // Main Dashboard Component
-const AdminDashboard = () => {
+const AdminDashboard = ({ userRole }) => {
   const [view, setView] = useState('dashboard');
   const [queue, setQueue] = useState([]);
   const [activityLogs, setActivityLogs] = useState([]);
   const [loading, setLoading] = useState(true);
   const [stateTransitionModal, setStateTransitionModal] = useState({ show: false, ticket: null, newStatus: null });
+  const [poValidationModal, setPOValidationModal] = useState({ show: false, ticket: null });
+  const [manualTicketModal, setManualTicketModal] = useState({ show: false });
 
   useEffect(() => {
     let unsubscribes = [];
@@ -314,6 +484,26 @@ const AdminDashboard = () => {
     setStateTransitionModal({ show: false, ticket: null, newStatus: null });
   };
 
+  const handlePOValidation = async (queueId, isValid, reason) => {
+    try {
+      await adminQueueService.validatePO(queueId, isValid, reason);
+      setPOValidationModal({ show: false, ticket: null });
+    } catch (error) {
+      console.error('Error validating PO:', error);
+      alert('Failed to validate PO');
+    }
+  };
+
+  const handleCreateManualTicket = async (ticketData) => {
+    try {
+      await adminQueueService.createManualTicket(ticketData);
+      setManualTicketModal({ show: false });
+    } catch (error) {
+      console.error('Error creating manual ticket:', error);
+      alert('Failed to create manual ticket');
+    }
+  };
+
   const handleSignOut = async () => {
     try {
       await adminAuthService.signOut();
@@ -338,12 +528,29 @@ const AdminDashboard = () => {
         />
       )}
 
+      {poValidationModal.show && (
+        <POValidationModal
+          selectedTicket={poValidationModal.ticket}
+          onClose={() => setPOValidationModal({ show: false, ticket: null })}
+          onConfirm={handlePOValidation}
+        />
+      )}
+
+      {manualTicketModal.show && (
+        <ManualTicketModal
+          onClose={() => setManualTicketModal({ show: false })}
+          onConfirm={handleCreateManualTicket}
+        />
+      )}
+
       {/* Header */}
       <div className="bg-white shadow-sm sticky top-0 z-10">
         <div className="max-w-7xl mx-auto px-4 py-4">
           <div className="flex items-center justify-between">
             <div>
-              <h1 className="text-2xl font-bold text-gray-800">Admin Portal</h1>
+              <h1 className="text-2xl font-bold text-gray-800">
+                {userRole === ADMIN_ROLES.SHIPPING_ADMIN ? 'Shipping Admin Portal' : 'Order Desk Admin Portal'}
+              </h1>
               <p className="text-sm text-gray-600">Omega Products Truck Queue Management</p>
             </div>
             
@@ -357,7 +564,7 @@ const AdminDashboard = () => {
                       : 'text-gray-600 hover:text-gray-800 hover:bg-gray-100'
                   }`}
                 >
-                  Dashboard
+                  {userRole === ADMIN_ROLES.SHIPPING_ADMIN ? 'Queue Management' : 'PO Management'}
                 </button>
                 <button
                   onClick={() => setView('history')}
@@ -370,6 +577,16 @@ const AdminDashboard = () => {
                   History
                 </button>
               </nav>
+              
+              {userRole === ADMIN_ROLES.ORDER_DESK_ADMIN && (
+                <button
+                  onClick={() => setManualTicketModal({ show: true })}
+                  className="flex items-center gap-2 px-4 py-2 bg-blue-500 hover:bg-blue-600 text-white rounded-lg transition-colors"
+                >
+                  <Truck className="w-4 h-4" />
+                  Create Ticket
+                </button>
+              )}
               
               <button
                 onClick={handleSignOut}
@@ -385,11 +602,9 @@ const AdminDashboard = () => {
 
       {/* Main Content */}
       <div className="max-w-7xl mx-auto px-4 py-6">
-        {view === 'dashboard' && (
+        {view === 'dashboard' && userRole === ADMIN_ROLES.SHIPPING_ADMIN && (
           <div className="space-y-6">
-
-
-            {/* Three Stage Layout */}
+            {/* Three Stage Layout for Shipping Admin */}
             <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
               {/* 1. Queue Section */}
               <div className="bg-white rounded-xl shadow-lg overflow-hidden">
@@ -419,7 +634,7 @@ const AdminDashboard = () => {
                               <span className="bg-blue-100 text-blue-800 text-xs font-medium px-2 py-1 rounded-full">
                                 #{ticket.position}
                               </span>
-                              <span className="font-semibold text-gray-800 text-sm">{ticket.driverName}</span>
+                              <span className="font-semibold text-gray-800 text-sm">PO: {ticket.poNumber}</span>
                             </div>
                           </div>
                           
@@ -466,7 +681,7 @@ const AdminDashboard = () => {
                           <div className="flex items-center justify-between mb-2">
                             <div className="flex items-center gap-2">
                               <Truck className="w-4 h-4 text-gray-600" />
-                              <span className="font-semibold text-gray-800 text-sm">{ticket.driverName}</span>
+                              <span className="font-semibold text-gray-800 text-sm">PO: {ticket.poNumber}</span>
                             </div>
                             <span className="bg-yellow-100 text-yellow-800 text-xs font-medium px-2 py-1 rounded-full">
                               Summoned
@@ -535,7 +750,7 @@ const AdminDashboard = () => {
                           <div className="flex items-center justify-between mb-2">
                             <div className="flex items-center gap-2">
                               <CheckCircle className="w-4 h-4 text-green-600" />
-                              <span className="font-semibold text-gray-800 text-sm">{log.driverName}</span>
+                              <span className="font-semibold text-gray-800 text-sm">PO: {log.poNumber}</span>
                             </div>
                             <span className="bg-green-100 text-green-800 text-xs font-medium px-2 py-1 rounded-full">
                               Resolved
@@ -549,6 +764,111 @@ const AdminDashboard = () => {
                         </div>
                       ))}
                     </div>
+                  )}
+                </div>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {view === 'dashboard' && userRole === ADMIN_ROLES.ORDER_DESK_ADMIN && (
+          <div className="space-y-6">
+            {/* PO Management Dashboard for Order Desk Admin */}
+            <div className="bg-white rounded-xl shadow-lg overflow-hidden">
+              <div className="bg-gradient-to-r from-purple-600 to-purple-700 px-6 py-4">
+                <h2 className="text-xl font-bold text-white">PO Management & Queue Overview</h2>
+                <p className="text-purple-100 text-sm">Validate PO numbers and manage queue tickets</p>
+              </div>
+              
+              <div className="p-6">
+                <div className="grid gap-4">
+                  {queue.length === 0 ? (
+                    <div className="text-center py-12 text-gray-500">
+                      <Truck className="w-12 h-12 mx-auto mb-4 opacity-50" />
+                      <p>No trucks in queue</p>
+                    </div>
+                  ) : (
+                    queue.map((ticket) => (
+                      <div key={ticket.id} className="border border-gray-200 rounded-lg p-4 hover:bg-gray-50 transition-colors">
+                        <div className="flex items-center justify-between">
+                          <div className="flex-1">
+                            <div className="flex items-center gap-3 mb-2">
+                              <span className={`px-2 py-1 rounded-full text-xs font-medium ${
+                                ticket.status === QUEUE_STATUS.QUEUED ? 'bg-blue-100 text-blue-800' :
+                                ticket.status === QUEUE_STATUS.SUMMONED ? 'bg-yellow-100 text-yellow-800' :
+                                'bg-green-100 text-green-800'
+                              }`}>
+                                {ticket.status === QUEUE_STATUS.QUEUED ? `#${ticket.position} in Queue` :
+                                 ticket.status === QUEUE_STATUS.SUMMONED ? 'Active' : 'Resolved'}
+                              </span>
+                              <Truck className="w-4 h-4 text-gray-600" />
+                              <span className="font-semibold text-gray-800">PO: {ticket.poNumber}</span>
+                              {ticket.createdByAdmin && (
+                                <span className="px-2 py-1 bg-purple-100 text-purple-800 text-xs rounded-full">
+                                  Manual Entry
+                                </span>
+                              )}
+                            </div>
+                            
+                            <div className="grid grid-cols-2 md:grid-cols-3 gap-4 text-sm text-gray-600">
+                              <div>
+                                <span className="font-medium">Phone:</span> {ticket.phoneNumber}
+                              </div>
+                              <div>
+                                <span className="font-medium">Type:</span> {ticket.orderType}
+                              </div>
+                              <div>
+                                <span className="font-medium">Joined:</span> {new Date(ticket.joinedAt).toLocaleTimeString()}
+                              </div>
+                            </div>
+
+                            {ticket.poValidated !== undefined && (
+                              <div className="mt-2">
+                                <span className={`inline-flex items-center px-2 py-1 rounded-full text-xs font-medium ${
+                                  ticket.poValidated 
+                                    ? 'bg-green-100 text-green-800' 
+                                    : 'bg-red-100 text-red-800'
+                                }`}>
+                                  {ticket.poValidated ? '✓ PO Validated' : '✗ PO Invalid'}
+                                </span>
+                                {ticket.poValidationReason && (
+                                  <span className="ml-2 text-xs text-gray-500">
+                                    {ticket.poValidationReason}
+                                  </span>
+                                )}
+                              </div>
+                            )}
+                          </div>
+                          
+                          <div className="flex items-center gap-2">
+                            {ticket.poValidated === undefined && (
+                              <button
+                                onClick={() => setPOValidationModal({ show: true, ticket })}
+                                className="px-3 py-2 bg-purple-500 hover:bg-purple-600 text-white text-sm rounded-lg transition-colors"
+                              >
+                                Validate PO
+                              </button>
+                            )}
+                            {ticket.poValidated === false && (
+                              <button
+                                onClick={() => setPOValidationModal({ show: true, ticket })}
+                                className="px-3 py-2 bg-green-500 hover:bg-green-600 text-white text-sm rounded-lg transition-colors"
+                              >
+                                Re-validate
+                              </button>
+                            )}
+                            {ticket.poValidated === true && (
+                              <button
+                                onClick={() => setPOValidationModal({ show: true, ticket })}
+                                className="px-3 py-2 bg-orange-500 hover:bg-orange-600 text-white text-sm rounded-lg transition-colors"
+                              >
+                                Invalidate
+                              </button>
+                            )}
+                          </div>
+                        </div>
+                      </div>
+                    ))
                   )}
                 </div>
               </div>
@@ -605,6 +925,7 @@ const AdminDashboard = () => {
 // Main Admin App Component
 const AdminApp = () => {
   const [user, setUser] = useState(null);
+  const [userProfile, setUserProfile] = useState(null);
   const [loading, setLoading] = useState(true);
   const [loginLoading, setLoginLoading] = useState(false);
   const [error, setError] = useState('');
@@ -616,24 +937,28 @@ const AdminApp = () => {
       
       if (user) {
         try {
-          const userProfile = await adminAuthService.getUserProfile(user.uid);
-          console.log('User profile:', userProfile);
+          const profile = await adminAuthService.getUserProfile(user.uid);
+          console.log('User profile:', profile);
           
-          if (userProfile && userProfile.role === 'admin') {
+          if (profile && Object.values(ADMIN_ROLES).includes(profile.role)) {
             setUser(user);
+            setUserProfile(profile);
             setError('');
           } else {
             console.log('User is not an admin or profile not found');
             setError('Access denied. Admin account required.');
+            setLoginLoading(false); // Reset login loading on access denied
             await adminAuthService.signOut();
           }
         } catch (error) {
           console.error('Error getting user profile:', error);
           setError('Failed to verify admin access. Please try again.');
+          setLoginLoading(false); // Reset login loading on auth error
           await adminAuthService.signOut();
         }
       } else {
         setUser(null);
+        setUserProfile(null);
       }
       setLoading(false);
     });
@@ -670,7 +995,7 @@ const AdminApp = () => {
     );
   }
 
-  return <AdminDashboard />;
+  return <AdminDashboard userRole={userProfile?.role} />;
 };
 
 export default AdminApp;

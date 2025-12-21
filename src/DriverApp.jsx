@@ -67,7 +67,6 @@ const HomeScreen = ({ onNavigate, queueLength, calculateWaitTime }) => (
 // Join Queue Screen
 const JoinQueueScreen = ({ onNavigate, onSubmitRequest }) => {
   const [formData, setFormData] = useState({
-    driverName: '',
     poNumber: '',
     confirmCode: ''
   });
@@ -75,7 +74,7 @@ const JoinQueueScreen = ({ onNavigate, onSubmitRequest }) => {
   const [error, setError] = useState('');
 
   const handleSubmit = async () => {
-    if (!formData.driverName || !formData.poNumber || !formData.confirmCode) {
+    if (!formData.poNumber || !formData.confirmCode) {
       setError('Please fill in all fields');
       return;
     }
@@ -113,19 +112,6 @@ const JoinQueueScreen = ({ onNavigate, onSubmitRequest }) => {
         )}
         
         <div className="space-y-4">
-          <div>
-            <label className="block text-sm font-medium text-gray-700 mb-2">
-              Driver Name
-            </label>
-            <input
-              type="text"
-              value={formData.driverName}
-              onChange={(e) => setFormData(prev => ({ ...prev, driverName: e.target.value }))}
-              className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-              placeholder="John Doe"
-            />
-          </div>
-
           <div>
             <label className="block text-sm font-medium text-gray-700 mb-2">
               PO Number
