@@ -42,9 +42,21 @@ export const driverQueueService = {
         )
       );
       
-      // Calculate next position
-      const currentPositions = queueSnapshot.docs.map(doc => doc.data().position || 0);
-      const nextPosition = currentPositions.length > 0 ? Math.max(...currentPositions) + 1 : 1;
+      // Calculate next position using consecutive numbering
+      // Sort existing queue by position and assign the next consecutive number
+      const sortedQueue = queueSnapshot.docs
+        .map(doc => doc.data())
+        .sort((a, b) => (a.position || 0) - (b.position || 0));
+      
+      // Find the next available consecutive position
+      let nextPosition = 1;
+      for (const item of sortedQueue) {
+        if (item.position === nextPosition) {
+          nextPosition++;
+        } else {
+          break;
+        }
+      }
       
       // Add directly to queue
       const docRef = await addDoc(collection(db, COLLECTIONS.QUEUE), {
@@ -85,15 +97,18 @@ export const driverQueueService = {
       const queueSnapshot = await getDocs(
         query(
           collection(db, COLLECTIONS.QUEUE), 
-          where('status', 'in', [QUEUE_STATUS.QUEUED, QUEUE_STATUS.SUMMONED, QUEUE_STATUS.STAGING, QUEUE_STATUS.LOADING]),
-          orderBy('position')
+          where('status', 'in', [QUEUE_STATUS.QUEUED, QUEUE_STATUS.SUMMONED])
+          // Removed orderBy to avoid composite index requirement
         )
       );
       
-      return queueSnapshot.docs.map(doc => ({
+      const queueData = queueSnapshot.docs.map(doc => ({
         id: doc.id,
         ...doc.data()
       }));
+      
+      // Sort by position in JavaScript to avoid composite index requirement
+      return queueData.sort((a, b) => (a.position || 0) - (b.position || 0));
     } catch (error) {
       throw new Error(`Failed to get queue status: ${error.message}`);
     }
@@ -129,7 +144,7 @@ export const driverQueueService = {
         query(
           collection(db, COLLECTIONS.QUEUE),
           where('poNumber', '==', poNumber),
-          where('status', 'in', [QUEUE_STATUS.QUEUED, QUEUE_STATUS.SUMMONED, QUEUE_STATUS.STAGING, QUEUE_STATUS.LOADING])
+          where('status', 'in', [QUEUE_STATUS.QUEUED, QUEUE_STATUS.SUMMONED])
         )
       );
       
@@ -177,10 +192,30 @@ export const driverQueueService = {
   onQueueChange(callback) {
     const q = query(
       collection(db, COLLECTIONS.QUEUE),
-      where('status', 'in', [QUEUE_STATUS.QUEUED, QUEUE_STATUS.SUMMONED, QUEUE_STATUS.STAGING, QUEUE_STATUS.LOADING]),
-      orderBy('position')
+      where('status', 'in', [QUEUE_STATUS.QUEUED, QUEUE_STATUS.SUMMONED])
+      // Removed orderBy to avoid composite index requirement
     );
-    return onSnapshot(q, callback);
+    
+    return onSnapshot(q, (snapshot) => {
+      const queueData = snapshot.docs.map(doc => ({
+        id: doc.id,
+        ...doc.data()
+      }));
+      
+      // Sort by position in JavaScript
+      const sortedQueueData = queueData.sort((a, b) => (a.position || 0) - (b.position || 0));
+      
+      // Create a new snapshot-like object with sorted docs
+      const sortedSnapshot = {
+        ...snapshot,
+        docs: sortedQueueData.map((data, index) => ({
+          id: data.id,
+          data: () => data
+        }))
+      };
+      
+      callback(sortedSnapshot);
+    });
   },
 
   onNotificationsChangeByPO(poNumber, callback) {

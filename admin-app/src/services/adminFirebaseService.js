@@ -362,6 +362,18 @@ export const adminQueueService = {
     }
   },
 
+  // Update queue position (for drag and drop reordering)
+  async updateQueuePosition(queueId, newPosition) {
+    try {
+      await updateDoc(doc(db, COLLECTIONS.QUEUE, queueId), {
+        position: newPosition,
+        updatedAt: serverTimestamp()
+      });
+    } catch (error) {
+      throw new Error(`Failed to update queue position: ${error.message}`);
+    }
+  },
+
   // Send notification
   async sendNotification(userId, type, message, poNumber = null) {
     try {
@@ -408,7 +420,8 @@ export const adminQueueService = {
   onQueueChange(callback, errorCallback) {
     const q = query(
       collection(db, COLLECTIONS.QUEUE),
-      where('status', 'in', [QUEUE_STATUS.QUEUED, QUEUE_STATUS.SUMMONED, QUEUE_STATUS.STAGING, QUEUE_STATUS.LOADING])
+      where('status', 'in', [QUEUE_STATUS.QUEUED, QUEUE_STATUS.SUMMONED])
+      // No orderBy to avoid composite index requirement - sorting done in JavaScript
     );
     return onSnapshot(q, (snapshot) => {
       // Sort by position in JavaScript to avoid composite index requirement
@@ -473,9 +486,21 @@ export const adminQueueService = {
         )
       );
       
-      // Calculate next position
-      const currentPositions = queueSnapshot.docs.map(doc => doc.data().position || 0);
-      const nextPosition = currentPositions.length > 0 ? Math.max(...currentPositions) + 1 : 1;
+      // Calculate next position using consecutive numbering
+      // Sort existing queue by position and assign the next consecutive number
+      const sortedQueue = queueSnapshot.docs
+        .map(doc => doc.data())
+        .sort((a, b) => (a.position || 0) - (b.position || 0));
+      
+      // Find the next available consecutive position
+      let nextPosition = 1;
+      for (const item of sortedQueue) {
+        if (item.position === nextPosition) {
+          nextPosition++;
+        } else {
+          break;
+        }
+      }
       
       // Add to queue
       const docRef = await addDoc(collection(db, COLLECTIONS.QUEUE), {

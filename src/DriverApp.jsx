@@ -16,15 +16,13 @@ const LoadingSpinner = () => (
 const HomeScreen = ({ onNavigate, queueLength, calculateWaitTime }) => (
   <div className="space-y-6">
     <div className="bg-gradient-to-br from-blue-500 to-blue-600 rounded-2xl p-6 text-white shadow-lg">
-      <h2 className="text-2xl font-bold mb-2">Queue Status</h2>
-      <p className="text-blue-100 mb-4">Corona, California</p>
+      <div className="flex items-center gap-3 mb-4">
+        <Users className="w-6 h-6" />
+        <h2 className="text-2xl font-bold">Trucks in Queue</h2>
+      </div>
       
       <div className="bg-white/20 backdrop-blur rounded-xl p-4">
-        <div className="flex items-center gap-2 mb-2">
-          <Users className="w-5 h-5" />
-          <span className="text-sm font-medium">Trucks in Queue</span>
-        </div>
-        <div className="text-3xl font-bold mb-1">{queueLength}</div>
+        <div className="text-4xl font-bold mb-2">{queueLength}</div>
         <div className="text-sm text-blue-100">
           Est. wait: ~{calculateWaitTime(queueLength)} minutes
         </div>
@@ -68,7 +66,8 @@ const HomeScreen = ({ onNavigate, queueLength, calculateWaitTime }) => (
 const JoinQueueScreen = ({ onNavigate, onSubmitRequest }) => {
   const [formData, setFormData] = useState({
     poNumber: '',
-    confirmCode: ''
+    confirmCode: '',
+    type: 'pickup' // Default to pickup
   });
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
@@ -76,6 +75,19 @@ const JoinQueueScreen = ({ onNavigate, onSubmitRequest }) => {
   const handleSubmit = async () => {
     if (!formData.poNumber || !formData.confirmCode) {
       setError('Please fill in all fields');
+      return;
+    }
+
+    // Validate PO number (must be exactly 7 digits)
+    if (!/^\d{7}$/.test(formData.poNumber)) {
+      setError('PO number must be exactly 7 digits');
+      return;
+    }
+
+    // Validate US phone number (10 digits, various formats accepted)
+    const phoneDigits = formData.confirmCode.replace(/\D/g, '');
+    if (phoneDigits.length !== 10) {
+      setError('Please enter a valid US phone number (10 digits)');
       return;
     }
 
@@ -114,35 +126,74 @@ const JoinQueueScreen = ({ onNavigate, onSubmitRequest }) => {
         <div className="space-y-4">
           <div>
             <label className="block text-sm font-medium text-gray-700 mb-2">
+              Type
+            </label>
+            <div className="grid grid-cols-2 gap-3">
+              <button
+                type="button"
+                onClick={() => setFormData(prev => ({ ...prev, type: 'pickup' }))}
+                className={`px-4 py-3 rounded-lg border-2 transition-colors font-medium ${
+                  formData.type === 'pickup'
+                    ? 'border-blue-500 bg-blue-50 text-blue-700'
+                    : 'border-gray-300 bg-white text-gray-700 hover:border-gray-400'
+                }`}
+              >
+                📦 Pickup
+              </button>
+              <button
+                type="button"
+                onClick={() => setFormData(prev => ({ ...prev, type: 'delivery' }))}
+                className={`px-4 py-3 rounded-lg border-2 transition-colors font-medium ${
+                  formData.type === 'delivery'
+                    ? 'border-blue-500 bg-blue-50 text-blue-700'
+                    : 'border-gray-300 bg-white text-gray-700 hover:border-gray-400'
+                }`}
+              >
+                🚚 Delivery
+              </button>
+            </div>
+          </div>
+
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-2">
               PO Number
             </label>
             <input
               type="text"
               value={formData.poNumber}
-              onChange={(e) => setFormData(prev => ({ ...prev, poNumber: e.target.value }))}
+              onChange={(e) => {
+                const value = e.target.value.replace(/\D/g, '').slice(0, 7);
+                setFormData(prev => ({ ...prev, poNumber: value }));
+              }}
               className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-              placeholder="PO-12345"
+              placeholder="1234567"
+              maxLength="7"
             />
           </div>
 
           <div>
             <label className="block text-sm font-medium text-gray-700 mb-2">
-              Confirmation Code
+              Phone Number
             </label>
             <input
-              type="text"
+              type="tel"
               value={formData.confirmCode}
-              onChange={(e) => setFormData(prev => ({ ...prev, confirmCode: e.target.value }))}
+              onChange={(e) => {
+                const value = e.target.value.replace(/\D/g, '');
+                let formatted = value;
+                if (value.length >= 6) {
+                  formatted = `(${value.slice(0, 3)}) ${value.slice(3, 6)}-${value.slice(6, 10)}`;
+                } else if (value.length >= 3) {
+                  formatted = `(${value.slice(0, 3)}) ${value.slice(3)}`;
+                }
+                setFormData(prev => ({ ...prev, confirmCode: formatted }));
+              }}
               className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-              placeholder="1234"
+              placeholder="(555) 123-4567"
+              maxLength="14"
             />
           </div>
 
-          <div className="bg-blue-50 border border-blue-200 rounded-lg p-4">
-            <p className="text-sm text-blue-800">
-              <strong>Note:</strong> An admin will verify your information and location before approving your request to join the queue.
-            </p>
-          </div>
 
           <button
             onClick={handleSubmit}

@@ -11,9 +11,146 @@ import {
   Shield,
   Eye,
   EyeOff,
-  Truck
+  Truck,
+  Phone,
+  Package,
+  ArrowDownToLine,
+  GripVertical
 } from 'lucide-react';
+import {
+  DndContext,
+  closestCenter,
+  KeyboardSensor,
+  PointerSensor,
+  useSensor,
+  useSensors,
+} from '@dnd-kit/core';
+import {
+  arrayMove,
+  SortableContext,
+  sortableKeyboardCoordinates,
+  verticalListSortingStrategy,
+} from '@dnd-kit/sortable';
+import {
+  useSortable,
+} from '@dnd-kit/sortable';
+import { CSS } from '@dnd-kit/utilities';
 import { adminAuthService, adminQueueService, QUEUE_STATUS, ADMIN_ROLES } from './services/adminFirebaseService.js';
+
+// Utility function to format relative time
+const formatRelativeTime = (timestamp) => {
+  const now = new Date();
+  const time = new Date(timestamp);
+  const diffInMinutes = Math.floor((now - time) / (1000 * 60));
+  
+  if (diffInMinutes < 1) return 'Just now';
+  if (diffInMinutes < 60) return `${diffInMinutes}m ago`;
+  
+  const diffInHours = Math.floor(diffInMinutes / 60);
+  if (diffInHours < 24) return `${diffInHours}h ago`;
+  
+  const diffInDays = Math.floor(diffInHours / 24);
+  return `${diffInDays}d ago`;
+};
+
+// Sortable Queue Row Component
+const SortableQueueRow = ({ ticket, stagingZones, onSummon }) => {
+  const {
+    attributes,
+    listeners,
+    setNodeRef,
+    transform,
+    transition,
+    isDragging,
+  } = useSortable({ id: ticket.id });
+
+  const style = {
+    transform: CSS.Transform.toString(transform),
+    transition,
+    opacity: isDragging ? 0.5 : 1,
+  };
+
+  const availableZones = Object.values(stagingZones).filter(zone => zone.status === 'available').length;
+
+  return (
+    <tr
+      ref={setNodeRef}
+      style={style}
+      className={`hover:bg-gray-50 transition-colors ${isDragging ? 'shadow-lg' : ''}`}
+    >
+      <td className="px-4 py-3 whitespace-nowrap text-xs text-gray-500">
+        <div>
+          <div className="font-medium">{formatRelativeTime(ticket.joinedAt)}</div>
+          <div>{new Date(ticket.joinedAt).toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'})}</div>
+        </div>
+      </td>
+      <td className="px-4 py-3 whitespace-nowrap">
+        <div className="flex items-center gap-2">
+          <button
+            className="cursor-grab active:cursor-grabbing text-gray-400 hover:text-gray-600"
+            {...attributes}
+            {...listeners}
+          >
+            <GripVertical className="w-4 h-4" />
+          </button>
+          <span className="font-bold text-gray-900 text-sm">
+            {ticket.poNumber}
+          </span>
+        </div>
+      </td>
+      <td className="px-4 py-3 whitespace-nowrap">
+        <div className="flex items-center gap-1 text-xs text-gray-600">
+          <Phone className="w-3 h-3" />
+          <span>{ticket.confirmCode}</span>
+        </div>
+      </td>
+      <td className="px-4 py-3 whitespace-nowrap">
+        <div className="flex items-center gap-1">
+          {ticket.type === 'pickup' ? (
+            <Package className="w-3 h-3 text-blue-600" />
+          ) : (
+            <ArrowDownToLine className="w-3 h-3 text-green-600" />
+          )}
+          <span className="text-xs text-gray-600 capitalize">{ticket.type || 'pickup'}</span>
+        </div>
+      </td>
+      <td className="px-4 py-3 whitespace-nowrap">
+        <div className="flex items-center gap-2">
+          {ticket.poValidated === true ? (
+            <>
+              <CheckCircle className="w-4 h-4 text-green-500" />
+              <span className="text-xs text-green-700 font-medium">Validated</span>
+            </>
+          ) : ticket.poValidated === false ? (
+            <>
+              <XCircle className="w-4 h-4 text-red-500" />
+              <span className="text-xs text-red-700 font-medium">Invalid</span>
+            </>
+          ) : (
+            <>
+              <AlertCircle className="w-4 h-4 text-yellow-500" />
+              <span className="text-xs text-yellow-700 font-medium">Pending</span>
+            </>
+          )}
+        </div>
+      </td>
+      <td className="px-4 py-3 whitespace-nowrap">
+        <button
+          onClick={() => onSummon(ticket)}
+          disabled={availableZones === 0}
+          className={`px-3 py-1 text-xs font-medium rounded-md transition-colors ${
+            availableZones === 0
+              ? 'bg-gray-300 text-gray-500 cursor-not-allowed'
+              : 'bg-blue-500 hover:bg-blue-600 text-white'
+          }`}
+          title={availableZones === 0 ? 'Both staging zones are occupied' : 'Summon driver'}
+        >
+          {availableZones === 0 ? 'Zones Full' : 'Summon →'}
+        </button>
+      </td>
+    </tr>
+  );
+};
 
 // Loading component
 const LoadingSpinner = () => (
@@ -28,6 +165,10 @@ const LoadingSpinner = () => (
 // PO Validation Modal Component
 const POValidationModal = ({ selectedTicket, onClose, onConfirm }) => {
   const [reason, setReason] = useState('');
+  
+  // Check current validation status
+  const isCurrentlyValid = selectedTicket?.poValidated === true;
+  const isCurrentlyInvalid = selectedTicket?.poValidated === false;
 
   return (
     <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
@@ -39,8 +180,20 @@ const POValidationModal = ({ selectedTicket, onClose, onConfirm }) => {
         
         <div className="mb-4">
           <p className="text-gray-600 mb-3">
-            Validate PO <strong>{selectedTicket?.poNumber}</strong>?
+            Update validation for PO <strong>{selectedTicket?.poNumber}</strong>
           </p>
+          
+          {/* Show current status */}
+          {isCurrentlyValid && (
+            <div className="mb-3 p-2 bg-green-50 border border-green-200 rounded-lg">
+              <p className="text-sm text-green-700">Currently: ✓ Valid</p>
+            </div>
+          )}
+          {isCurrentlyInvalid && (
+            <div className="mb-3 p-2 bg-red-50 border border-red-200 rounded-lg">
+              <p className="text-sm text-red-700">Currently: ✗ Invalid</p>
+            </div>
+          )}
           
           <div>
             <label className="block text-sm font-medium text-gray-700 mb-2">
@@ -65,13 +218,23 @@ const POValidationModal = ({ selectedTicket, onClose, onConfirm }) => {
           </button>
           <button
             onClick={() => onConfirm(selectedTicket.id, false, reason)}
-            className="flex-1 bg-red-500 hover:bg-red-600 text-white font-medium py-3 rounded-lg transition-colors"
+            disabled={isCurrentlyInvalid}
+            className={`flex-1 font-medium py-3 rounded-lg transition-colors ${
+              isCurrentlyInvalid 
+                ? 'bg-gray-300 text-gray-500 cursor-not-allowed' 
+                : 'bg-red-500 hover:bg-red-600 text-white'
+            }`}
           >
             Invalidate
           </button>
           <button
             onClick={() => onConfirm(selectedTicket.id, true, reason)}
-            className="flex-1 bg-green-500 hover:bg-green-600 text-white font-medium py-3 rounded-lg transition-colors"
+            disabled={isCurrentlyValid}
+            className={`flex-1 font-medium py-3 rounded-lg transition-colors ${
+              isCurrentlyValid 
+                ? 'bg-gray-300 text-gray-500 cursor-not-allowed' 
+                : 'bg-green-500 hover:bg-green-600 text-white'
+            }`}
           >
             Validate
           </button>
@@ -86,7 +249,7 @@ const ManualTicketModal = ({ onClose, onConfirm }) => {
   const [formData, setFormData] = useState({
     poNumber: '',
     phoneNumber: '',
-    orderType: 'pickup'
+    type: 'pickup'
   });
   const [loading, setLoading] = useState(false);
 
@@ -96,9 +259,29 @@ const ManualTicketModal = ({ onClose, onConfirm }) => {
       return;
     }
 
+    // Validate PO number (must be exactly 7 digits)
+    if (!/^\d{7}$/.test(formData.poNumber)) {
+      alert('PO number must be exactly 7 digits');
+      return;
+    }
+
+    // Validate US phone number (10 digits)
+    const phoneDigits = formData.phoneNumber.replace(/\D/g, '');
+    if (phoneDigits.length !== 10) {
+      alert('Please enter a valid US phone number (10 digits)');
+      return;
+    }
+
     setLoading(true);
     try {
-      await onConfirm(formData);
+      // Map phoneNumber to confirmCode to match the expected field name
+      const ticketData = {
+        ...formData,
+        confirmCode: formData.phoneNumber
+      };
+      delete ticketData.phoneNumber;
+      
+      await onConfirm(ticketData);
       onClose();
     } catch (error) {
       console.error('Error creating manual ticket:', error);
@@ -123,9 +306,13 @@ const ManualTicketModal = ({ onClose, onConfirm }) => {
             <input
               type="text"
               value={formData.poNumber}
-              onChange={(e) => setFormData(prev => ({ ...prev, poNumber: e.target.value }))}
+              onChange={(e) => {
+                const value = e.target.value.replace(/\D/g, '').slice(0, 7);
+                setFormData(prev => ({ ...prev, poNumber: value }));
+              }}
               className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-              placeholder="PO123456"
+              placeholder="1234567"
+              maxLength="7"
               required
             />
           </div>
@@ -137,9 +324,19 @@ const ManualTicketModal = ({ onClose, onConfirm }) => {
             <input
               type="tel"
               value={formData.phoneNumber}
-              onChange={(e) => setFormData(prev => ({ ...prev, phoneNumber: e.target.value }))}
+              onChange={(e) => {
+                const value = e.target.value.replace(/\D/g, '');
+                let formatted = value;
+                if (value.length >= 6) {
+                  formatted = `(${value.slice(0, 3)}) ${value.slice(3, 6)}-${value.slice(6, 10)}`;
+                } else if (value.length >= 3) {
+                  formatted = `(${value.slice(0, 3)}) ${value.slice(3)}`;
+                }
+                setFormData(prev => ({ ...prev, phoneNumber: formatted }));
+              }}
               className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
               placeholder="(555) 123-4567"
+              maxLength="14"
               required
             />
           </div>
@@ -149,8 +346,8 @@ const ManualTicketModal = ({ onClose, onConfirm }) => {
               Order Type
             </label>
             <select
-              value={formData.orderType}
-              onChange={(e) => setFormData(prev => ({ ...prev, orderType: e.target.value }))}
+              value={formData.type}
+              onChange={(e) => setFormData(prev => ({ ...prev, type: e.target.value }))}
               className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
             >
               <option value="pickup">Pickup</option>
@@ -181,68 +378,46 @@ const ManualTicketModal = ({ onClose, onConfirm }) => {
 };
 
 // State Transition Modal Component
-const StateTransitionModal = ({ selectedTicket, newStatus, onClose, onConfirm }) => {
-  const statusLabels = {
-    [QUEUE_STATUS.QUEUED]: 'In Queue',
-    [QUEUE_STATUS.SUMMONED]: 'Active (Summoned)',
-    [QUEUE_STATUS.COMPLETED]: 'Resolved'
+const StateTransitionModal = ({ selectedTicket, newStatus, stagingZones, onClose, onConfirm, loading }) => {
+  // Check if summoning and if staging zones are available
+  const isSummoning = newStatus === QUEUE_STATUS.SUMMONED;
+  const availableZones = Object.entries(stagingZones || {}).filter(([_, zone]) => zone.status === 'available');
+  const canSummon = !isSummoning || availableZones.length > 0;
+
+  const getTitle = () => {
+    if (isSummoning) return 'Summon Driver?';
+    if (newStatus === QUEUE_STATUS.COMPLETED) return 'Mark as Resolved?';
+    if (newStatus === QUEUE_STATUS.QUEUED) return 'Move Back to Queue?';
+    return 'Update Status?';
   };
 
-  const statusDescriptions = {
-    [QUEUE_STATUS.QUEUED]: 'Move back to waiting in queue',
-    [QUEUE_STATUS.SUMMONED]: 'Summon driver - they will be notified to come to the facility',
-    [QUEUE_STATUS.COMPLETED]: 'Mark as resolved - driver has completed loading and left'
+  const getMessage = () => {
+    if (isSummoning) {
+      return `Summon PO ${selectedTicket?.poNumber}? They will be assigned to an available staging zone.`;
+    }
+    if (newStatus === QUEUE_STATUS.COMPLETED) {
+      return `Mark PO ${selectedTicket?.poNumber} as resolved? They have completed loading.`;
+    }
+    if (newStatus === QUEUE_STATUS.QUEUED) {
+      return `Move PO ${selectedTicket?.poNumber} back to the queue?`;
+    }
+    return `Update status for PO ${selectedTicket?.poNumber}?`;
   };
-
-  const currentStatus = selectedTicket?.status;
-  const isMovingBackward = newStatus === QUEUE_STATUS.QUEUED && currentStatus !== QUEUE_STATUS.QUEUED;
 
   return (
     <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
       <div className="bg-white rounded-xl p-6 max-w-md w-full">
         <div className="flex items-center gap-3 mb-4">
-          <AlertCircle className={`w-6 h-6 ${isMovingBackward ? 'text-orange-500' : 'text-blue-500'}`} />
+          <AlertCircle className="w-6 h-6 text-blue-500" />
           <h3 className="text-xl font-bold text-gray-800">
-            {isMovingBackward ? 'Move Back to Queue?' : 'Update Status?'}
+            {getTitle()}
           </h3>
         </div>
         
-        <div className="mb-4">
-          <p className="text-gray-600 mb-3">
-            Change status for PO <strong>{selectedTicket?.poNumber}</strong>?
+        <div className="mb-6">
+          <p className="text-gray-600">
+            {getMessage()}
           </p>
-          
-          <div className="bg-gray-50 rounded-lg p-3 mb-3">
-            <div className="flex items-center justify-between text-sm">
-              <span className="text-gray-600">Current:</span>
-              <span className="font-medium">{statusLabels[currentStatus]}</span>
-            </div>
-            <div className="flex items-center justify-center my-2">
-              <div className={`w-6 h-0.5 ${isMovingBackward ? 'bg-orange-400' : 'bg-blue-400'}`}></div>
-              <span className={`mx-2 ${isMovingBackward ? 'text-orange-500' : 'text-blue-500'}`}>
-                {isMovingBackward ? '←' : '→'}
-              </span>
-              <div className={`w-6 h-0.5 ${isMovingBackward ? 'bg-orange-400' : 'bg-blue-400'}`}></div>
-            </div>
-            <div className="flex items-center justify-between text-sm">
-              <span className="text-gray-600">New:</span>
-              <span className={`font-medium ${isMovingBackward ? 'text-orange-600' : 'text-blue-600'}`}>
-                {statusLabels[newStatus]}
-              </span>
-            </div>
-          </div>
-          
-          <p className="text-sm text-gray-600">
-            {statusDescriptions[newStatus]}
-          </p>
-          
-          {isMovingBackward && (
-            <div className="mt-3 p-3 bg-orange-50 border border-orange-200 rounded-lg">
-              <p className="text-sm text-orange-800">
-                <strong>Note:</strong> Driver will be notified of the status change.
-              </p>
-            </div>
-          )}
         </div>
 
         <div className="flex gap-3">
@@ -254,13 +429,25 @@ const StateTransitionModal = ({ selectedTicket, newStatus, onClose, onConfirm })
           </button>
           <button
             onClick={() => onConfirm(selectedTicket.id, newStatus)}
-            className={`flex-1 font-medium py-3 rounded-lg transition-colors text-white ${
-              isMovingBackward 
-                ? 'bg-orange-500 hover:bg-orange-600' 
-                : 'bg-blue-500 hover:bg-blue-600'
-            }`}
+            disabled={loading || !canSummon}
+            className={`flex-1 font-medium py-3 rounded-lg transition-colors ${
+              !canSummon 
+                ? 'bg-gray-300 text-gray-500 cursor-not-allowed'
+                : isSummoning
+                ? 'bg-blue-500 hover:bg-blue-600 text-white'
+                : newStatus === QUEUE_STATUS.COMPLETED
+                ? 'bg-green-500 hover:bg-green-600 text-white'
+                : 'bg-orange-500 hover:bg-orange-600 text-white'
+            } ${loading ? 'opacity-50 cursor-not-allowed' : ''}`}
           >
-            {isMovingBackward ? 'Move Back' : 'Confirm'}
+            {loading ? (
+              <>
+                <div className="w-5 h-5 border-2 border-white border-t-transparent rounded-full animate-spin mr-2 inline-block"></div>
+                Updating...
+              </>
+            ) : (
+              'Confirm'
+            )}
           </button>
         </div>
       </div>
@@ -385,9 +572,23 @@ const AdminDashboard = ({ userRole }) => {
   const [queue, setQueue] = useState([]);
   const [activityLogs, setActivityLogs] = useState([]);
   const [loading, setLoading] = useState(true);
-  const [stateTransitionModal, setStateTransitionModal] = useState({ show: false, ticket: null, newStatus: null });
+  const [stateTransitionModal, setStateTransitionModal] = useState({ show: false, ticket: null, newStatus: null, loading: false });
   const [poValidationModal, setPOValidationModal] = useState({ show: false, ticket: null });
   const [manualTicketModal, setManualTicketModal] = useState({ show: false });
+  
+  // Staging zones state (2 zones as per spec)
+  const [stagingZones, setStagingZones] = useState({
+    zone1: { ticket: null, status: 'available' }, // available, pending, occupied
+    zone2: { ticket: null, status: 'available' }
+  });
+
+  // Drag and drop sensors
+  const sensors = useSensors(
+    useSensor(PointerSensor),
+    useSensor(KeyboardSensor, {
+      coordinateGetter: sortableKeyboardCoordinates,
+    })
+  );
 
   useEffect(() => {
     let unsubscribes = [];
@@ -411,6 +612,45 @@ const AdminDashboard = ({ userRole }) => {
             requestedAt: doc.data().requestedAt?.toDate?.()?.toISOString() || new Date().toISOString()
           }));
           setQueue(queueData);
+          
+          // Update staging zones based on summoned tickets
+          const summonedTickets = queueData.filter(ticket => ticket.status === QUEUE_STATUS.SUMMONED);
+          setStagingZones(prev => {
+            const newZones = { ...prev };
+            
+            // Clear zones that no longer have summoned tickets
+            Object.keys(newZones).forEach(zoneKey => {
+              const zone = newZones[zoneKey];
+              if (zone.ticket) {
+                const stillSummoned = summonedTickets.find(t => t.id === zone.ticket.id);
+                if (!stillSummoned) {
+                  newZones[zoneKey] = { ticket: null, status: 'available' };
+                }
+              }
+            });
+            
+            // Assign new summoned tickets to available zones
+            summonedTickets.forEach(ticket => {
+              const alreadyAssigned = Object.values(newZones).some(zone => 
+                zone.ticket && zone.ticket.id === ticket.id
+              );
+              
+              if (!alreadyAssigned) {
+                const availableZone = Object.keys(newZones).find(zoneKey => 
+                  newZones[zoneKey].status === 'available'
+                );
+                
+                if (availableZone) {
+                  newZones[availableZone] = {
+                    ticket: ticket,
+                    status: 'pending'
+                  };
+                }
+              }
+            });
+            
+            return newZones;
+          });
           
           if (loadingTimeout) {
             clearTimeout(loadingTimeout);
@@ -468,11 +708,13 @@ const AdminDashboard = ({ userRole }) => {
 
   const handleStatusUpdate = async (ticketId, newStatus) => {
     try {
+      setStateTransitionModal(prev => ({ ...prev, loading: true }));
       await adminQueueService.updateQueueStatus(ticketId, newStatus);
-      setStateTransitionModal({ show: false, ticket: null, newStatus: null });
+      setStateTransitionModal({ show: false, ticket: null, newStatus: null, loading: false });
     } catch (error) {
       console.error('Error updating status:', error);
       alert('Failed to update status');
+      setStateTransitionModal(prev => ({ ...prev, loading: false }));
     }
   };
 
@@ -481,7 +723,7 @@ const AdminDashboard = ({ userRole }) => {
   };
 
   const closeStateTransitionModal = () => {
-    setStateTransitionModal({ show: false, ticket: null, newStatus: null });
+    setStateTransitionModal({ show: false, ticket: null, newStatus: null, loading: false });
   };
 
   const handlePOValidation = async (queueId, isValid, reason) => {
@@ -502,6 +744,58 @@ const AdminDashboard = ({ userRole }) => {
       console.error('Error creating manual ticket:', error);
       alert('Failed to create manual ticket');
     }
+  };
+
+  const handleQueueReorder = async (event) => {
+    const { active, over } = event;
+
+    if (active.id !== over.id) {
+      const queuedTickets = queue.filter(q => q.status === QUEUE_STATUS.QUEUED).sort((a, b) => a.position - b.position);
+      const oldIndex = queuedTickets.findIndex(ticket => ticket.id === active.id);
+      const newIndex = queuedTickets.findIndex(ticket => ticket.id === over.id);
+
+      if (oldIndex !== -1 && newIndex !== -1) {
+        const newOrder = arrayMove(queuedTickets, oldIndex, newIndex);
+        
+        // Update positions locally for immediate feedback
+        const updatedQueue = queue.map(ticket => {
+          if (ticket.status === QUEUE_STATUS.QUEUED) {
+            const newPosition = newOrder.findIndex(t => t.id === ticket.id) + 1;
+            return { ...ticket, position: newPosition };
+          }
+          return ticket;
+        });
+        setQueue(updatedQueue);
+
+        // Update positions in Firebase
+        try {
+          await Promise.all(
+            newOrder.map((ticket, index) =>
+              adminQueueService.updateQueuePosition(ticket.id, index + 1)
+            )
+          );
+        } catch (error) {
+          console.error('Error updating queue order:', error);
+          // Revert local changes on error
+          const revertedQueue = queue.map(ticket => {
+            const originalTicket = queuedTickets.find(t => t.id === ticket.id);
+            return originalTicket ? { ...ticket, position: originalTicket.position } : ticket;
+          });
+          setQueue(revertedQueue);
+          alert('Failed to update queue order');
+        }
+      }
+    }
+  };
+
+  const handleDriverArrival = (zoneId) => {
+    setStagingZones(prev => ({
+      ...prev,
+      [zoneId]: {
+        ...prev[zoneId],
+        status: 'occupied'
+      }
+    }));
   };
 
   const handleSignOut = async () => {
@@ -604,275 +898,635 @@ const AdminDashboard = ({ userRole }) => {
       <div className="max-w-7xl mx-auto px-4 py-6">
         {view === 'dashboard' && userRole === ADMIN_ROLES.SHIPPING_ADMIN && (
           <div className="space-y-6">
-            {/* Three Stage Layout for Shipping Admin */}
-            <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-              {/* 1. Queue Section */}
-              <div className="bg-white rounded-xl shadow-lg overflow-hidden">
+            {/* Staging Zones - Side by Side */}
+            <div className="grid grid-cols-2 gap-4">
+              {/* Staging Zone 1 */}
+              <div className={`bg-white rounded-xl shadow-lg overflow-hidden ${
+                stagingZones.zone1.status === 'occupied' 
+                  ? 'border-l-4 border-red-500'
+                  : stagingZones.zone1.status === 'pending'
+                  ? 'border-l-4 border-yellow-500'
+                  : 'border-l-4 border-green-500'
+              }`}>
+                <div className={`px-4 py-3 ${
+                  stagingZones.zone1.status === 'occupied' 
+                    ? 'bg-red-50'
+                    : stagingZones.zone1.status === 'pending'
+                    ? 'bg-yellow-50'
+                    : 'bg-green-50'
+                }`}>
+                  <div className="flex items-center justify-between">
+                    <div className="flex items-center gap-2">
+                      <div className={`w-3 h-3 rounded-full ${
+                        stagingZones.zone1.status === 'occupied' 
+                          ? 'bg-red-500'
+                          : stagingZones.zone1.status === 'pending'
+                          ? 'bg-yellow-500'
+                          : 'bg-green-500'
+                      }`}></div>
+                      <h3 className="font-bold text-gray-800">Staging Zone 1</h3>
+                    </div>
+                    <span className={`text-xs px-2 py-1 rounded-full font-medium ${
+                      stagingZones.zone1.status === 'occupied' 
+                        ? 'bg-red-200 text-red-800'
+                        : stagingZones.zone1.status === 'pending'
+                        ? 'bg-yellow-200 text-yellow-800'
+                        : 'bg-green-200 text-green-800'
+                    }`}>
+                      {stagingZones.zone1.status === 'occupied' 
+                        ? 'Occupied'
+                        : stagingZones.zone1.status === 'pending'
+                        ? 'Pending'
+                        : 'Available'}
+                    </span>
+                  </div>
+                </div>
+                
+                <div className="p-4 min-h-[120px]">
+                  {stagingZones.zone1.ticket ? (
+                    <div>
+                      <div className="flex items-center justify-between mb-2">
+                        <div className="flex items-center gap-2">
+                          <span className="font-bold text-gray-900 text-sm">
+                            {stagingZones.zone1.ticket.poNumber}
+                          </span>
+                          <div className="flex items-center gap-1">
+                            {stagingZones.zone1.ticket.poValidated === true ? (
+                              <>
+                                <CheckCircle className="w-3 h-3 text-green-500" />
+                                <span className="text-xs text-green-600 font-medium">Valid</span>
+                              </>
+                            ) : stagingZones.zone1.ticket.poValidated === false ? (
+                              <>
+                                <XCircle className="w-3 h-3 text-red-500" />
+                                <span className="text-xs text-red-600 font-medium">Invalid</span>
+                              </>
+                            ) : (
+                              <>
+                                <AlertCircle className="w-3 h-3 text-yellow-500" />
+                                <span className="text-xs text-yellow-600 font-medium">Pending Validation</span>
+                              </>
+                            )}
+                          </div>
+                        </div>
+                        <span className="text-xs text-gray-500 font-medium">
+                          {formatRelativeTime(stagingZones.zone1.ticket.joinedAt)}
+                        </span>
+                      </div>
+                      
+                      <div className="flex items-center justify-between mb-3">
+                        <div className="flex items-center gap-3">
+                          <div className="flex items-center gap-1 text-xs text-gray-600">
+                            <Phone className="w-3 h-3" />
+                            <span>{stagingZones.zone1.ticket.confirmCode}</span>
+                          </div>
+                          <div className="flex items-center gap-1">
+                            {stagingZones.zone1.ticket.type === 'pickup' ? (
+                              <Package className="w-3 h-3 text-blue-600" />
+                            ) : (
+                              <ArrowDownToLine className="w-3 h-3 text-green-600" />
+                            )}
+                            <span className="text-xs text-gray-600 capitalize">{stagingZones.zone1.ticket.type || 'pickup'}</span>
+                          </div>
+                        </div>
+                      </div>
+                      
+                      <div className="flex gap-2">
+                        {stagingZones.zone1.status === 'pending' ? (
+                          <button
+                            onClick={() => handleDriverArrival('zone1')}
+                            className="flex-1 bg-blue-500 hover:bg-blue-600 text-white text-xs font-medium py-2 rounded-md transition-colors"
+                          >
+                            ✓ Mark Occupied
+                          </button>
+                        ) : stagingZones.zone1.status === 'occupied' ? (
+                          <button
+                            onClick={() => openStateTransitionModal(stagingZones.zone1.ticket, QUEUE_STATUS.COMPLETED)}
+                            className="flex-1 bg-green-500 hover:bg-green-600 text-white text-xs font-medium py-2 rounded-md transition-colors"
+                          >
+                            Complete →
+                          </button>
+                        ) : null}
+                        <button
+                          onClick={() => openStateTransitionModal(stagingZones.zone1.ticket, QUEUE_STATUS.QUEUED)}
+                          className="flex-1 bg-gray-400 hover:bg-gray-500 text-white text-xs font-medium py-2 rounded-md transition-colors"
+                        >
+                          ← Move Back to Queue
+                        </button>
+                      </div>
+                    </div>
+                  ) : (
+                    <div className="flex flex-col items-center justify-center h-full text-center">
+                      <div className="bg-green-100 rounded-full p-3 mb-3">
+                        <Truck className="w-6 h-6 text-green-600" />
+                      </div>
+                      <h4 className="text-sm font-medium text-gray-700 mb-1">Zone Available</h4>
+                      <p className="text-xs text-gray-500">Ready for next driver</p>
+                    </div>
+                  )}
+                </div>
+              </div>
+
+              {/* Staging Zone 2 */}
+              <div className={`bg-white rounded-xl shadow-lg overflow-hidden ${
+                stagingZones.zone2.status === 'occupied' 
+                  ? 'border-l-4 border-red-500'
+                  : stagingZones.zone2.status === 'pending'
+                  ? 'border-l-4 border-yellow-500'
+                  : 'border-l-4 border-green-500'
+              }`}>
+                <div className={`px-4 py-3 ${
+                  stagingZones.zone2.status === 'occupied' 
+                    ? 'bg-red-50'
+                    : stagingZones.zone2.status === 'pending'
+                    ? 'bg-yellow-50'
+                    : 'bg-green-50'
+                }`}>
+                  <div className="flex items-center justify-between">
+                    <div className="flex items-center gap-2">
+                      <div className={`w-3 h-3 rounded-full ${
+                        stagingZones.zone2.status === 'occupied' 
+                          ? 'bg-red-500'
+                          : stagingZones.zone2.status === 'pending'
+                          ? 'bg-yellow-500'
+                          : 'bg-green-500'
+                      }`}></div>
+                      <h3 className="font-bold text-gray-800">Staging Zone 2</h3>
+                    </div>
+                    <span className={`text-xs px-2 py-1 rounded-full font-medium ${
+                      stagingZones.zone2.status === 'occupied' 
+                        ? 'bg-red-200 text-red-800'
+                        : stagingZones.zone2.status === 'pending'
+                        ? 'bg-yellow-200 text-yellow-800'
+                        : 'bg-green-200 text-green-800'
+                    }`}>
+                      {stagingZones.zone2.status === 'occupied' 
+                        ? 'Occupied'
+                        : stagingZones.zone2.status === 'pending'
+                        ? 'Pending'
+                        : 'Available'}
+                    </span>
+                  </div>
+                </div>
+                
+                <div className="p-4 min-h-[120px]">
+                  {stagingZones.zone2.ticket ? (
+                    <div>
+                      <div className="flex items-center justify-between mb-2">
+                        <div className="flex items-center gap-2">
+                          <span className="font-bold text-gray-900 text-sm">
+                            {stagingZones.zone2.ticket.poNumber}
+                          </span>
+                          <div className="flex items-center gap-1">
+                            {stagingZones.zone2.ticket.poValidated === true ? (
+                              <>
+                                <CheckCircle className="w-3 h-3 text-green-500" />
+                                <span className="text-xs text-green-600 font-medium">Valid</span>
+                              </>
+                            ) : stagingZones.zone2.ticket.poValidated === false ? (
+                              <>
+                                <XCircle className="w-3 h-3 text-red-500" />
+                                <span className="text-xs text-red-600 font-medium">Invalid</span>
+                              </>
+                            ) : (
+                              <>
+                                <AlertCircle className="w-3 h-3 text-yellow-500" />
+                                <span className="text-xs text-yellow-600 font-medium">Pending Validation</span>
+                              </>
+                            )}
+                          </div>
+                        </div>
+                        <span className="text-xs text-gray-500 font-medium">
+                          {formatRelativeTime(stagingZones.zone2.ticket.joinedAt)}
+                        </span>
+                      </div>
+                      
+                      <div className="flex items-center justify-between mb-3">
+                        <div className="flex items-center gap-3">
+                          <div className="flex items-center gap-1 text-xs text-gray-600">
+                            <Phone className="w-3 h-3" />
+                            <span>{stagingZones.zone2.ticket.confirmCode}</span>
+                          </div>
+                          <div className="flex items-center gap-1">
+                            {stagingZones.zone2.ticket.type === 'pickup' ? (
+                              <Package className="w-3 h-3 text-blue-600" />
+                            ) : (
+                              <ArrowDownToLine className="w-3 h-3 text-green-600" />
+                            )}
+                            <span className="text-xs text-gray-600 capitalize">{stagingZones.zone2.ticket.type || 'pickup'}</span>
+                          </div>
+                        </div>
+                      </div>
+                      
+                      <div className="flex gap-2">
+                        {stagingZones.zone2.status === 'pending' ? (
+                          <button
+                            onClick={() => handleDriverArrival('zone2')}
+                            className="flex-1 bg-blue-500 hover:bg-blue-600 text-white text-xs font-medium py-2 rounded-md transition-colors"
+                          >
+                            ✓ Mark Occupied
+                          </button>
+                        ) : stagingZones.zone2.status === 'occupied' ? (
+                          <button
+                            onClick={() => openStateTransitionModal(stagingZones.zone2.ticket, QUEUE_STATUS.COMPLETED)}
+                            className="flex-1 bg-green-500 hover:bg-green-600 text-white text-xs font-medium py-2 rounded-md transition-colors"
+                          >
+                            Complete →
+                          </button>
+                        ) : null}
+                        <button
+                          onClick={() => openStateTransitionModal(stagingZones.zone2.ticket, QUEUE_STATUS.QUEUED)}
+                          className="flex-1 bg-gray-400 hover:bg-gray-500 text-white text-xs font-medium py-2 rounded-md transition-colors"
+                        >
+                          ← Move Back to Queue
+                        </button>
+                      </div>
+                    </div>
+                  ) : (
+                    <div className="flex flex-col items-center justify-center h-full text-center">
+                      <div className="bg-green-100 rounded-full p-3 mb-3">
+                        <Truck className="w-6 h-6 text-green-600" />
+                      </div>
+                      <h4 className="text-sm font-medium text-gray-700 mb-1">Zone Available</h4>
+                      <p className="text-xs text-gray-500">Ready for next driver</p>
+                    </div>
+                  )}
+                </div>
+              </div>
+            </div>
+
+            {/* Queue Section - Full Width Drag & Drop Table */}
+            <div className="bg-white rounded-xl shadow-lg overflow-hidden">
                 <div className="bg-gradient-to-r from-blue-600 to-blue-700 px-4 py-3">
                   <h3 className="text-lg font-bold text-white flex items-center gap-2">
                     <Users className="w-5 h-5" />
                     Queue ({queue.filter(q => q.status === QUEUE_STATUS.QUEUED).length})
                   </h3>
-                  <p className="text-blue-100 text-sm">Waiting drivers</p>
                 </div>
                 
-                <div className="max-h-96 overflow-y-auto">
+                <div className="max-h-80 overflow-y-auto">
                   {queue.filter(q => q.status === QUEUE_STATUS.QUEUED).length === 0 ? (
                     <div className="p-6 text-center text-gray-500">
                       <Users className="w-8 h-8 mx-auto mb-2 text-gray-300" />
                       <p className="text-sm">No drivers in queue</p>
                     </div>
                   ) : (
-                    <div className="divide-y divide-gray-200">
-                      {queue
-                        .filter(q => q.status === QUEUE_STATUS.QUEUED)
-                        .sort((a, b) => a.position - b.position)
-                        .map((ticket) => (
-                        <div key={ticket.id} className="p-4 hover:bg-gray-50 transition-colors">
-                          <div className="flex items-center justify-between mb-2">
-                            <div className="flex items-center gap-2">
-                              <span className="bg-blue-100 text-blue-800 text-xs font-medium px-2 py-1 rounded-full">
-                                #{ticket.position}
-                              </span>
-                              <span className="font-semibold text-gray-800 text-sm">PO: {ticket.poNumber}</span>
-                            </div>
-                          </div>
-                          
-                          <div className="text-xs text-gray-600 mb-3">
-                            <p>PO: {ticket.poNumber}</p>
-                            <p>Joined: {new Date(ticket.joinedAt).toLocaleTimeString()}</p>
-                          </div>
-                          
-                          <button
-                            onClick={() => openStateTransitionModal(ticket, QUEUE_STATUS.SUMMONED)}
-                            className="w-full bg-blue-500 hover:bg-blue-600 text-white text-sm font-medium py-2 rounded-lg transition-colors"
+                    <DndContext
+                      sensors={sensors}
+                      collisionDetection={closestCenter}
+                      onDragEnd={handleQueueReorder}
+                    >
+                      <table className="min-w-full">
+                        <thead className="bg-gray-50 border-b">
+                          <tr>
+                            <th className="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                              Joined
+                            </th>
+                            <th className="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                              PO Number
+                            </th>
+                            <th className="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                              Phone
+                            </th>
+                            <th className="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                              Type
+                            </th>
+                            <th className="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                              Validation Status
+                            </th>
+                            <th className="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                              Action
+                            </th>
+                          </tr>
+                        </thead>
+                        <tbody className="bg-white divide-y divide-gray-200">
+                          <SortableContext
+                            items={queue.filter(q => q.status === QUEUE_STATUS.QUEUED).sort((a, b) => a.position - b.position).map(t => t.id)}
+                            strategy={verticalListSortingStrategy}
                           >
-                            Summon →
-                          </button>
-                        </div>
-                      ))}
-                    </div>
+                            {queue
+                              .filter(q => q.status === QUEUE_STATUS.QUEUED)
+                              .sort((a, b) => a.position - b.position)
+                              .map((ticket) => (
+                                <SortableQueueRow
+                                  key={ticket.id}
+                                  ticket={ticket}
+                                  stagingZones={stagingZones}
+                                  onSummon={(ticket) => openStateTransitionModal(ticket, QUEUE_STATUS.SUMMONED)}
+                                />
+                              ))}
+                          </SortableContext>
+                        </tbody>
+                      </table>
+                    </DndContext>
                   )}
                 </div>
               </div>
 
-              {/* 2. Active/Summoned Section */}
-              <div className="bg-white rounded-xl shadow-lg overflow-hidden">
-                <div className="bg-gradient-to-r from-yellow-500 to-yellow-600 px-4 py-3">
-                  <h3 className="text-lg font-bold text-white flex items-center gap-2">
-                    <Clock className="w-5 h-5" />
-                    Active ({queue.filter(q => q.status === QUEUE_STATUS.SUMMONED).length})
-                  </h3>
-                  <p className="text-yellow-100 text-sm">Currently being processed</p>
-                </div>
-                
-                <div className="max-h-96 overflow-y-auto">
-                  {queue.filter(q => q.status === QUEUE_STATUS.SUMMONED).length === 0 ? (
-                    <div className="p-6 text-center text-gray-500">
-                      <Clock className="w-8 h-8 mx-auto mb-2 text-gray-300" />
-                      <p className="text-sm">No active drivers</p>
-                    </div>
-                  ) : (
-                    <div className="divide-y divide-gray-200">
-                      {queue
-                        .filter(q => q.status === QUEUE_STATUS.SUMMONED)
-                        .map((ticket) => (
-                        <div key={ticket.id} className="p-4 hover:bg-gray-50 transition-colors">
-                          <div className="flex items-center justify-between mb-2">
-                            <div className="flex items-center gap-2">
-                              <Truck className="w-4 h-4 text-gray-600" />
-                              <span className="font-semibold text-gray-800 text-sm">PO: {ticket.poNumber}</span>
-                            </div>
-                            <span className="bg-yellow-100 text-yellow-800 text-xs font-medium px-2 py-1 rounded-full">
-                              Summoned
-                            </span>
-                          </div>
-                          
-                          <div className="text-xs text-gray-600 mb-3">
-                            <p>PO: {ticket.poNumber}</p>
-                            <p>Summoned: {new Date(ticket.joinedAt).toLocaleTimeString()}</p>
-                          </div>
-                          
-                          <div className="flex gap-2">
-                            <button
-                              onClick={() => openStateTransitionModal(ticket, QUEUE_STATUS.COMPLETED)}
-                              className="flex-1 bg-green-500 hover:bg-green-600 text-white text-sm font-medium py-2 rounded-lg transition-colors"
-                            >
-                              Mark Resolved →
-                            </button>
-                            <button
-                              onClick={() => openStateTransitionModal(ticket, QUEUE_STATUS.QUEUED)}
-                              className="px-3 bg-gray-400 hover:bg-gray-500 text-white text-sm rounded-lg transition-colors"
-                              title="Move back to queue"
-                            >
-                              ← Queue
-                            </button>
-                          </div>
-                        </div>
-                      ))}
-                    </div>
-                  )}
-                </div>
-              </div>
-
-              {/* 3. Resolved Section */}
-              <div className="bg-white rounded-xl shadow-lg overflow-hidden">
-                <div className="bg-gradient-to-r from-green-600 to-green-700 px-4 py-3">
-                  <h3 className="text-lg font-bold text-white flex items-center gap-2">
-                    <CheckCircle className="w-5 h-5" />
-                    Resolved Today ({activityLogs.filter(log => 
-                      log.action === 'completed' && 
-                      new Date(log.timestamp).toDateString() === new Date().toDateString()
-                    ).length})
-                  </h3>
-                  <p className="text-green-100 text-sm">Completed loading</p>
-                </div>
-                
-                <div className="max-h-96 overflow-y-auto">
-                  {activityLogs.filter(log => 
-                    log.action === 'completed' && 
-                    new Date(log.timestamp).toDateString() === new Date().toDateString()
-                  ).length === 0 ? (
-                    <div className="p-6 text-center text-gray-500">
-                      <CheckCircle className="w-8 h-8 mx-auto mb-2 text-gray-300" />
-                      <p className="text-sm">No completed drivers today</p>
-                    </div>
-                  ) : (
-                    <div className="divide-y divide-gray-200">
-                      {activityLogs
-                        .filter(log => 
-                          log.action === 'completed' && 
-                          new Date(log.timestamp).toDateString() === new Date().toDateString()
-                        )
-                        .sort((a, b) => new Date(b.timestamp) - new Date(a.timestamp))
-                        .map((log) => (
-                        <div key={log.id} className="p-4">
-                          <div className="flex items-center justify-between mb-2">
-                            <div className="flex items-center gap-2">
-                              <CheckCircle className="w-4 h-4 text-green-600" />
-                              <span className="font-semibold text-gray-800 text-sm">PO: {log.poNumber}</span>
-                            </div>
-                            <span className="bg-green-100 text-green-800 text-xs font-medium px-2 py-1 rounded-full">
-                              Resolved
-                            </span>
-                          </div>
-                          
-                          <div className="text-xs text-gray-600">
-                            <p>PO: {log.poNumber}</p>
-                            <p>Completed: {new Date(log.timestamp).toLocaleTimeString()}</p>
-                          </div>
-                        </div>
-                      ))}
-                    </div>
-                  )}
-                </div>
-              </div>
-            </div>
           </div>
         )}
 
         {view === 'dashboard' && userRole === ADMIN_ROLES.ORDER_DESK_ADMIN && (
           <div className="space-y-6">
-            {/* PO Management Dashboard for Order Desk Admin */}
+            {/* Today's Tickets */}
             <div className="bg-white rounded-xl shadow-lg overflow-hidden">
               <div className="bg-gradient-to-r from-purple-600 to-purple-700 px-6 py-4">
-                <h2 className="text-xl font-bold text-white">PO Management & Queue Overview</h2>
-                <p className="text-purple-100 text-sm">Validate PO numbers and manage queue tickets</p>
+                <h2 className="text-xl font-bold text-white">Today's Tickets</h2>
               </div>
               
-              <div className="p-6">
-                <div className="grid gap-4">
-                  {queue.length === 0 ? (
-                    <div className="text-center py-12 text-gray-500">
-                      <Truck className="w-12 h-12 mx-auto mb-4 opacity-50" />
-                      <p>No trucks in queue</p>
-                    </div>
-                  ) : (
-                    queue.map((ticket) => (
-                      <div key={ticket.id} className="border border-gray-200 rounded-lg p-4 hover:bg-gray-50 transition-colors">
-                        <div className="flex items-center justify-between">
-                          <div className="flex-1">
-                            <div className="flex items-center gap-3 mb-2">
-                              <span className={`px-2 py-1 rounded-full text-xs font-medium ${
-                                ticket.status === QUEUE_STATUS.QUEUED ? 'bg-blue-100 text-blue-800' :
-                                ticket.status === QUEUE_STATUS.SUMMONED ? 'bg-yellow-100 text-yellow-800' :
-                                'bg-green-100 text-green-800'
-                              }`}>
-                                {ticket.status === QUEUE_STATUS.QUEUED ? `#${ticket.position} in Queue` :
-                                 ticket.status === QUEUE_STATUS.SUMMONED ? 'Active' : 'Resolved'}
-                              </span>
-                              <Truck className="w-4 h-4 text-gray-600" />
-                              <span className="font-semibold text-gray-800">PO: {ticket.poNumber}</span>
-                              {ticket.createdByAdmin && (
-                                <span className="px-2 py-1 bg-purple-100 text-purple-800 text-xs rounded-full">
-                                  Manual Entry
-                                </span>
-                              )}
-                            </div>
-                            
-                            <div className="grid grid-cols-2 md:grid-cols-3 gap-4 text-sm text-gray-600">
-                              <div>
-                                <span className="font-medium">Phone:</span> {ticket.phoneNumber}
+              <div className="overflow-hidden">
+                {queue.filter(ticket => 
+                  new Date(ticket.joinedAt).toDateString() === new Date().toDateString()
+                ).length === 0 ? (
+                  <div className="text-center py-12 text-gray-500">
+                    <Truck className="w-12 h-12 mx-auto mb-4 opacity-50" />
+                    <p>No tickets today</p>
+                  </div>
+                ) : (
+                  <div className="overflow-x-auto">
+                    <table className="min-w-full divide-y divide-gray-200">
+                      <thead className="bg-gray-50">
+                        <tr>
+                          <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                            Joined
+                          </th>
+                          <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                            PO Number
+                          </th>
+                          <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                            Phone
+                          </th>
+                          <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                            Type
+                          </th>
+                          <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                            PO Validation
+                          </th>
+                          <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                            Actions
+                          </th>
+                        </tr>
+                      </thead>
+                      <tbody className="bg-white divide-y divide-gray-200">
+                        {queue
+                          .filter(ticket => 
+                            new Date(ticket.joinedAt).toDateString() === new Date().toDateString()
+                          )
+                          .sort((a, b) => new Date(b.joinedAt) - new Date(a.joinedAt))
+                          .map((ticket) => (
+                          <tr key={ticket.id} className="hover:bg-gray-50">
+                            <td className="px-6 py-4 whitespace-nowrap">
+                              <div className="text-sm text-gray-900">
+                                <div className="font-medium">{formatRelativeTime(ticket.joinedAt)}</div>
+                                <div className="text-xs text-gray-500">{new Date(ticket.joinedAt).toLocaleTimeString()}</div>
                               </div>
-                              <div>
-                                <span className="font-medium">Type:</span> {ticket.orderType}
-                              </div>
-                              <div>
-                                <span className="font-medium">Joined:</span> {new Date(ticket.joinedAt).toLocaleTimeString()}
-                              </div>
-                            </div>
-
-                            {ticket.poValidated !== undefined && (
-                              <div className="mt-2">
-                                <span className={`inline-flex items-center px-2 py-1 rounded-full text-xs font-medium ${
-                                  ticket.poValidated 
-                                    ? 'bg-green-100 text-green-800' 
-                                    : 'bg-red-100 text-red-800'
-                                }`}>
-                                  {ticket.poValidated ? '✓ PO Validated' : '✗ PO Invalid'}
-                                </span>
-                                {ticket.poValidationReason && (
-                                  <span className="ml-2 text-xs text-gray-500">
-                                    {ticket.poValidationReason}
+                            </td>
+                            <td className="px-6 py-4 whitespace-nowrap">
+                              <div className="flex items-center gap-2">
+                                <span className="text-sm font-medium text-gray-900">{ticket.poNumber}</span>
+                                {ticket.createdByAdmin && (
+                                  <span className="px-2 py-1 bg-purple-100 text-purple-800 text-xs rounded-full">
+                                    Manual
                                   </span>
                                 )}
                               </div>
-                            )}
-                          </div>
-                          
-                          <div className="flex items-center gap-2">
-                            {ticket.poValidated === undefined && (
-                              <button
-                                onClick={() => setPOValidationModal({ show: true, ticket })}
-                                className="px-3 py-2 bg-purple-500 hover:bg-purple-600 text-white text-sm rounded-lg transition-colors"
-                              >
-                                Validate PO
-                              </button>
-                            )}
-                            {ticket.poValidated === false && (
-                              <button
-                                onClick={() => setPOValidationModal({ show: true, ticket })}
-                                className="px-3 py-2 bg-green-500 hover:bg-green-600 text-white text-sm rounded-lg transition-colors"
-                              >
-                                Re-validate
-                              </button>
-                            )}
-                            {ticket.poValidated === true && (
-                              <button
-                                onClick={() => setPOValidationModal({ show: true, ticket })}
-                                className="px-3 py-2 bg-orange-500 hover:bg-orange-600 text-white text-sm rounded-lg transition-colors"
-                              >
-                                Invalidate
-                              </button>
-                            )}
-                          </div>
-                        </div>
-                      </div>
-                    ))
-                  )}
-                </div>
+                            </td>
+                            <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
+                              {ticket.phoneNumber || ticket.confirmCode}
+                            </td>
+                            <td className="px-6 py-4 whitespace-nowrap">
+                              <div className="flex items-center gap-1">
+                                {(() => {
+                                  // Get the type value from any available field
+                                  const typeValue = ticket.type || ticket.orderType || ticket.deliveryType || '';
+                                  const normalizedType = typeValue.toLowerCase().trim();
+                                  
+                                  if (normalizedType === 'pickup' || normalizedType.includes('pickup')) {
+                                    return (
+                                      <>
+                                        <Package className="w-4 h-4 text-blue-600" />
+                                        <span className="text-sm text-gray-900 capitalize">Pickup</span>
+                                      </>
+                                    );
+                                  } else if (normalizedType === 'delivery' || normalizedType.includes('delivery')) {
+                                    return (
+                                      <>
+                                        <ArrowDownToLine className="w-4 h-4 text-green-600" />
+                                        <span className="text-sm text-gray-900 capitalize">Delivery</span>
+                                      </>
+                                    );
+                                  } else {
+                                    return (
+                                      <span className="text-sm text-gray-400">
+                                        {typeValue || 'Not specified'}
+                                      </span>
+                                    );
+                                  }
+                                })()}
+                              </div>
+                            </td>
+                            <td className="px-6 py-4 whitespace-nowrap">
+                              {ticket.poValidated !== undefined ? (
+                                <div>
+                                  <span className={`inline-flex items-center px-2 py-1 rounded-full text-xs font-medium ${
+                                    ticket.poValidated 
+                                      ? 'bg-green-100 text-green-800' 
+                                      : 'bg-red-100 text-red-800'
+                                  }`}>
+                                    {ticket.poValidated ? '✓ Valid' : '✗ Invalid'}
+                                  </span>
+                                  {ticket.poValidationReason && (
+                                    <div className="text-xs text-gray-500 mt-1 max-w-xs truncate" title={ticket.poValidationReason}>
+                                      {ticket.poValidationReason}
+                                    </div>
+                                  )}
+                                </div>
+                              ) : (
+                                <span className="text-xs text-gray-400">Not validated</span>
+                              )}
+                            </td>
+                            <td className="px-6 py-4 whitespace-nowrap text-sm font-medium">
+                              {ticket.poValidated === undefined && (
+                                <button
+                                  onClick={() => setPOValidationModal({ show: true, ticket })}
+                                  className="text-purple-600 hover:text-purple-900 bg-purple-50 hover:bg-purple-100 px-3 py-1 rounded-md transition-colors"
+                                >
+                                  Validate
+                                </button>
+                              )}
+                              {ticket.poValidated === false && (
+                                <button
+                                  onClick={() => setPOValidationModal({ show: true, ticket })}
+                                  className="text-purple-600 hover:text-purple-900 bg-purple-50 hover:bg-purple-100 px-3 py-1 rounded-md transition-colors"
+                                >
+                                  Update
+                                </button>
+                              )}
+                              {ticket.poValidated === true && (
+                                <button
+                                  onClick={() => setPOValidationModal({ show: true, ticket })}
+                                  className="text-purple-600 hover:text-purple-900 bg-purple-50 hover:bg-purple-100 px-3 py-1 rounded-md transition-colors"
+                                >
+                                  Update
+                                </button>
+                              )}
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                )}
               </div>
             </div>
+
+            {/* Previous Days' Tickets */}
+            {queue.filter(ticket => 
+              new Date(ticket.joinedAt).toDateString() !== new Date().toDateString()
+            ).length > 0 && (
+              <div className="bg-white rounded-xl shadow-lg overflow-hidden">
+                <div className="bg-gradient-to-r from-gray-600 to-gray-700 px-6 py-4">
+                  <h2 className="text-xl font-bold text-white">Previous Days' Tickets</h2>
+                  <p className="text-gray-100 text-sm">Historical tickets from previous days</p>
+                </div>
+                
+                <div className="overflow-hidden">
+                  <div className="overflow-x-auto">
+                    <table className="min-w-full divide-y divide-gray-200">
+                      <thead className="bg-gray-50">
+                        <tr>
+                          <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                            Date
+                          </th>
+                          <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                            PO Number
+                          </th>
+                          <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                            Phone
+                          </th>
+                          <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                            Type
+                          </th>
+                          <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                            PO Validation
+                          </th>
+                          <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                            Actions
+                          </th>
+                        </tr>
+                      </thead>
+                      <tbody className="bg-white divide-y divide-gray-200">
+                        {queue
+                          .filter(ticket => 
+                            new Date(ticket.joinedAt).toDateString() !== new Date().toDateString()
+                          )
+                          .sort((a, b) => new Date(b.joinedAt) - new Date(a.joinedAt))
+                          .map((ticket) => (
+                          <tr key={ticket.id} className="hover:bg-gray-50">
+                            <td className="px-6 py-4 whitespace-nowrap">
+                              <div className="text-sm text-gray-900">
+                                <div className="font-medium">{formatRelativeTime(ticket.joinedAt)}</div>
+                                <div className="text-xs text-gray-500">{new Date(ticket.joinedAt).toLocaleDateString()}</div>
+                              </div>
+                            </td>
+                            <td className="px-6 py-4 whitespace-nowrap">
+                              <div className="flex items-center gap-2">
+                                <span className="text-sm font-medium text-gray-900">{ticket.poNumber}</span>
+                                {ticket.createdByAdmin && (
+                                  <span className="px-2 py-1 bg-purple-100 text-purple-800 text-xs rounded-full">
+                                    Manual
+                                  </span>
+                                )}
+                              </div>
+                            </td>
+                            <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
+                              {ticket.phoneNumber || ticket.confirmCode}
+                            </td>
+                            <td className="px-6 py-4 whitespace-nowrap">
+                              <div className="flex items-center gap-1">
+                                {(() => {
+                                  // Get the type value from any available field
+                                  const typeValue = ticket.type || ticket.orderType || ticket.deliveryType || '';
+                                  const normalizedType = typeValue.toLowerCase().trim();
+                                  
+                                  if (normalizedType === 'pickup' || normalizedType.includes('pickup')) {
+                                    return (
+                                      <>
+                                        <Package className="w-4 h-4 text-blue-600" />
+                                        <span className="text-sm text-gray-900 capitalize">Pickup</span>
+                                      </>
+                                    );
+                                  } else if (normalizedType === 'delivery' || normalizedType.includes('delivery')) {
+                                    return (
+                                      <>
+                                        <ArrowDownToLine className="w-4 h-4 text-green-600" />
+                                        <span className="text-sm text-gray-900 capitalize">Delivery</span>
+                                      </>
+                                    );
+                                  } else {
+                                    return (
+                                      <span className="text-sm text-gray-400">
+                                        {typeValue || 'Not specified'}
+                                      </span>
+                                    );
+                                  }
+                                })()}
+                              </div>
+                            </td>
+                            <td className="px-6 py-4 whitespace-nowrap">
+                              {ticket.poValidated !== undefined ? (
+                                <div>
+                                  <span className={`inline-flex items-center px-2 py-1 rounded-full text-xs font-medium ${
+                                    ticket.poValidated 
+                                      ? 'bg-green-100 text-green-800' 
+                                      : 'bg-red-100 text-red-800'
+                                  }`}>
+                                    {ticket.poValidated ? '✓ Valid' : '✗ Invalid'}
+                                  </span>
+                                  {ticket.poValidationReason && (
+                                    <div className="text-xs text-gray-500 mt-1 max-w-xs truncate" title={ticket.poValidationReason}>
+                                      {ticket.poValidationReason}
+                                    </div>
+                                  )}
+                                </div>
+                              ) : (
+                                <span className="text-xs text-gray-400">Not validated</span>
+                              )}
+                            </td>
+                            <td className="px-6 py-4 whitespace-nowrap text-sm font-medium">
+                              {ticket.poValidated === undefined && (
+                                <button
+                                  onClick={() => setPOValidationModal({ show: true, ticket })}
+                                  className="text-purple-600 hover:text-purple-900 bg-purple-50 hover:bg-purple-100 px-3 py-1 rounded-md transition-colors"
+                                >
+                                  Validate
+                                </button>
+                              )}
+                              {ticket.poValidated === false && (
+                                <button
+                                  onClick={() => setPOValidationModal({ show: true, ticket })}
+                                  className="text-purple-600 hover:text-purple-900 bg-purple-50 hover:bg-purple-100 px-3 py-1 rounded-md transition-colors"
+                                >
+                                  Update
+                                </button>
+                              )}
+                              {ticket.poValidated === true && (
+                                <button
+                                  onClick={() => setPOValidationModal({ show: true, ticket })}
+                                  className="text-purple-600 hover:text-purple-900 bg-purple-50 hover:bg-purple-100 px-3 py-1 rounded-md transition-colors"
+                                >
+                                  Update
+                                </button>
+                              )}
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                </div>
+              </div>
+            )}
           </div>
         )}
 
@@ -917,10 +1571,38 @@ const AdminDashboard = ({ userRole }) => {
             </div>
           </div>
         )}
+
+        {/* Modals */}
+        {stateTransitionModal.show && (
+          <StateTransitionModal
+            selectedTicket={stateTransitionModal.ticket}
+            newStatus={stateTransitionModal.newStatus}
+            stagingZones={stagingZones}
+            onClose={closeStateTransitionModal}
+            onConfirm={handleStatusUpdate}
+            loading={stateTransitionModal.loading}
+          />
+        )}
+
+        {poValidationModal.show && (
+          <POValidationModal
+            selectedTicket={poValidationModal.ticket}
+            onClose={() => setPOValidationModal({ show: false, ticket: null })}
+            onConfirm={handlePOValidation}
+          />
+        )}
+
+        {manualTicketModal.show && (
+          <ManualTicketModal
+            onClose={() => setManualTicketModal({ show: false })}
+            onConfirm={handleCreateManualTicket}
+          />
+        )}
       </div>
     </div>
   );
 };
+
 
 // Main Admin App Component
 const AdminApp = () => {
@@ -997,5 +1679,8 @@ const AdminApp = () => {
 
   return <AdminDashboard userRole={userProfile?.role} />;
 };
+
+
+
 
 export default AdminApp;
