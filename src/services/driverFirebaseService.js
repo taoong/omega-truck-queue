@@ -140,7 +140,8 @@ export const driverQueueService = {
   // Find user's current position by PO number
   async findPositionByPO(poNumber) {
     try {
-      const queueSnapshot = await getDocs(
+      // First, get the ticket with this PO number
+      const ticketSnapshot = await getDocs(
         query(
           collection(db, COLLECTIONS.QUEUE),
           where('poNumber', '==', poNumber),
@@ -148,16 +149,41 @@ export const driverQueueService = {
         )
       );
       
-      if (!queueSnapshot.empty) {
-        const doc = queueSnapshot.docs[0];
-        return {
-          id: doc.id,
-          ...doc.data(),
-          joinedAt: doc.data().joinedAt?.toDate?.()?.toISOString() || new Date().toISOString()
-        };
+      if (ticketSnapshot.empty) {
+        return null;
       }
       
-      return null;
+      const ticketDoc = ticketSnapshot.docs[0];
+      const ticketData = ticketDoc.data();
+      
+      // Get all tickets in queue to calculate actual position
+      const queueSnapshot = await getDocs(
+        query(
+          collection(db, COLLECTIONS.QUEUE),
+          where('status', 'in', [QUEUE_STATUS.QUEUED, QUEUE_STATUS.SUMMONED])
+        )
+      );
+      
+      // Sort all tickets by position
+      const allTickets = queueSnapshot.docs
+        .map(doc => ({
+          id: doc.id,
+          ...doc.data()
+        }))
+        .sort((a, b) => (a.position || 0) - (b.position || 0));
+      
+      // Find the index of this ticket in the sorted queue
+      const ticketIndex = allTickets.findIndex(t => t.id === ticketDoc.id);
+      
+      // Calculate actual position (1-based)
+      const actualPosition = ticketIndex >= 0 ? ticketIndex + 1 : ticketData.position || 1;
+      
+      return {
+        id: ticketDoc.id,
+        ...ticketData,
+        position: actualPosition, // Use calculated position instead of stored position
+        joinedAt: ticketData.joinedAt?.toDate?.()?.toISOString() || new Date().toISOString()
+      };
     } catch (error) {
       throw new Error(`Failed to find position: ${error.message}`);
     }
